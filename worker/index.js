@@ -303,8 +303,8 @@ function normalizeModels(payload) {
     if (!id) return null;
     return {
       id,
-      provider: String(item?.provider ?? item?.owned_by ?? inferProvider(id)).trim().toLowerCase(),
-      tag: String(item?.tag ?? item?.group ?? item?.category ?? "imported").trim(),
+      provider: cleanProviderName(item?.provider ?? item?.owned_by ?? inferProvider(id)),
+      tag: String(item?.tag ?? item?.group ?? item?.category ?? sourceTag(item?.owned_by ?? item?.provider)).trim(),
       inputPrice: numberFrom(item?.inputPrice ?? item?.input_price ?? item?.prompt_price, 0),
       outputPrice: numberFrom(item?.outputPrice ?? item?.output_price ?? item?.completion_price, 0),
       cachePrice: numberFrom(item?.cachePrice ?? item?.cache_price ?? item?.cached_price, 0),
@@ -345,7 +345,7 @@ function normalizeUsageRow(row) {
   return {
     requestId,
     ts,
-    provider: String(row.provider ?? row.channel ?? row.channel_name ?? inferProvider(model)).trim().toLowerCase(),
+    provider: cleanProviderName(row.provider ?? row.channel ?? row.channel_name ?? inferProvider(model)),
     model,
     inputTokens,
     outputTokens,
@@ -402,6 +402,32 @@ function inferProvider(id) {
   if (lower.includes("gpt") || lower.includes("codex")) return "codex";
   if (lower.includes("deepseek")) return "deepseek";
   return "custom";
+}
+
+function cleanProviderName(value) {
+  const text = String(value || "").trim();
+  if (!text) return "custom";
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      return new URL(text).hostname.replace(/^www\./, "");
+    } catch {
+      return text;
+    }
+  }
+  return text;
+}
+
+function sourceTag(value) {
+  const text = String(value || "").trim();
+  if (!text) return "imported";
+  if (/^https?:\/\//i.test(text)) return "url-source";
+  const lower = text.toLowerCase();
+  if (lower.includes("nvidia")) return "nvidia";
+  if (lower.includes("openai")) return "openai";
+  if (lower.includes("google")) return "google";
+  if (lower.includes("antigravity")) return "antigravity";
+  if (text.includes("公益")) return "公益站";
+  return "imported";
 }
 
 function numberFrom(value, fallback) {

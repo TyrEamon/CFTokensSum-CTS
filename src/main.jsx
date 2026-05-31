@@ -1374,7 +1374,7 @@ function getModelId(item) {
 
 function getProvider(item, id) {
   const explicit = typeof item === "object" ? item.provider ?? item.owned_by ?? item.vendor : "";
-  if (explicit) return String(explicit).trim().toLowerCase();
+  if (explicit) return cleanProviderName(explicit);
   const lower = id.toLowerCase();
   if (lower.includes("claude")) return "claude";
   if (lower.includes("gemini")) return "gemini";
@@ -1386,7 +1386,35 @@ function getProvider(item, id) {
 
 function getTag(item) {
   if (!item || typeof item !== "object") return "imported";
-  return String(item.tag ?? item.group ?? item.category ?? item.type ?? "imported").trim();
+  const explicit = item.tag ?? item.group ?? item.category ?? item.type;
+  if (explicit) return String(explicit).trim();
+  return sourceTag(item.owned_by ?? item.provider ?? item.vendor);
+}
+
+function cleanProviderName(value) {
+  const text = String(value || "").trim();
+  if (!text) return "custom";
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      return new URL(text).hostname.replace(/^www\./, "");
+    } catch {
+      return text;
+    }
+  }
+  return text;
+}
+
+function sourceTag(value) {
+  const text = String(value || "").trim();
+  if (!text) return "imported";
+  if (/^https?:\/\//i.test(text)) return "url-source";
+  const lower = text.toLowerCase();
+  if (lower.includes("nvidia")) return "nvidia";
+  if (lower.includes("openai")) return "openai";
+  if (lower.includes("google")) return "google";
+  if (lower.includes("antigravity")) return "antigravity";
+  if (text.includes("公益")) return "公益站";
+  return "imported";
 }
 
 function getUsageSummary(logs, models) {
