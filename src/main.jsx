@@ -1397,11 +1397,31 @@ function aggregateByModel(logs, models) {
 }
 
 function buildTimeBuckets(logs, models) {
-  const topModels = models.filter((model) => model.enabled).slice(0, 4).map((model) => model.id);
-  const now = Date.now();
-  return Array.from({ length: 7 }, (_, index) => {
-    const start = now - (6 - index) * 60 * 60 * 1000;
-    const end = start + 60 * 60 * 1000;
+  const hour = 60 * 60 * 1000;
+  const currentHour = new Date();
+  currentHour.setMinutes(0, 0, 0);
+  const latestStart = currentHour.getTime();
+  const bucketStarts = Array.from({ length: 7 }, (_, index) => latestStart - (6 - index) * hour);
+  const firstStart = bucketStarts[0];
+  const lastEnd = bucketStarts[bucketStarts.length - 1] + hour;
+  const windowLogs = logs.filter((log) => {
+    const time = new Date(log.ts).getTime();
+    return time >= firstStart && time < lastEnd;
+  });
+  const topModels = [...windowLogs.reduce((map, log) => {
+    const item = map.get(log.model) || { model: log.model, cost: 0, count: 0, tokens: 0 };
+    item.cost += costForLog(log, models);
+    item.count += 1;
+    item.tokens += log.totalTokens;
+    map.set(log.model, item);
+    return map;
+  }, new Map()).values()]
+    .sort((a, b) => b.cost - a.cost || b.count - a.count || b.tokens - a.tokens)
+    .slice(0, 8)
+    .map((item) => item.model);
+
+  return bucketStarts.map((start) => {
+    const end = start + hour;
     const dt = new Date(start);
     const label = `${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:00`;
     const hourLogs = logs.filter((log) => {
