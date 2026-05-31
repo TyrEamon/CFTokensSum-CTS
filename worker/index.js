@@ -2,7 +2,7 @@ const DEFAULT_QUEUE_COUNT = 500;
 const DEFAULT_USAGE_LIMIT = 5000;
 const AUTH_COOKIE = "cts_session";
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
-const PASSWORD_ITERATIONS = 120000;
+const PASSWORD_ITERATIONS = 100000;
 
 let schemaReady;
 
