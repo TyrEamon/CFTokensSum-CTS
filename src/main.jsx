@@ -1285,14 +1285,17 @@ function normalizeModels(payload) {
   return list.map((item) => {
     const id = getModelId(item);
     if (!id) return null;
+    const inputPrice = optionalNumber(item?.inputPrice ?? item?.input_price ?? item?.prompt_price);
+    const outputPrice = optionalNumber(item?.outputPrice ?? item?.output_price ?? item?.completion_price);
+    const cachePrice = optionalNumber(item?.cachePrice ?? item?.cache_price ?? item?.cached_price);
     return {
       id,
       provider: getProvider(item, id),
       tag: getTag(item),
-      inputPrice: numberFrom(item?.inputPrice ?? item?.input_price ?? item?.prompt_price, defaultInputPrice(id)),
-      outputPrice: numberFrom(item?.outputPrice ?? item?.output_price ?? item?.completion_price, defaultOutputPrice(id)),
-      cachePrice: numberFrom(item?.cachePrice ?? item?.cache_price ?? item?.cached_price, defaultCachePrice(id)),
-      enabled: typeof item?.enabled === "boolean" ? item.enabled : true,
+      ...(inputPrice === undefined ? {} : { inputPrice }),
+      ...(outputPrice === undefined ? {} : { outputPrice }),
+      ...(cachePrice === undefined ? {} : { cachePrice }),
+      ...(typeof item?.enabled === "boolean" ? { enabled: item.enabled } : {}),
     };
   }).filter(Boolean);
 }
@@ -1311,7 +1314,14 @@ function extractModelList(payload) {
 function mergeModels(incoming, setModels) {
   setModels((current) => {
     const map = new Map(current.map((model) => [model.id, model]));
-    incoming.forEach((model) => map.set(model.id, { ...map.get(model.id), ...model }));
+    incoming.forEach((model) => {
+      const existing = map.get(model.id);
+      const cleanModel = omitUndefined(model);
+      const next = existing
+        ? { ...existing, ...cleanModel }
+        : { inputPrice: 0, outputPrice: 0, cachePrice: 0, enabled: true, ...cleanModel };
+      map.set(model.id, next);
+    });
     return [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
   });
   return incoming.length;
@@ -1482,31 +1492,18 @@ function uniqueModelId(models, base) {
   return id;
 }
 
-function defaultInputPrice(id) {
-  const lower = id.toLowerCase();
-  if (lower.includes("opus")) return 15;
-  if (lower.includes("claude")) return 3;
-  if (lower.includes("gemini")) return 1.25;
-  if (lower.includes("mini")) return 0.2;
-  return 1;
-}
-
-function defaultOutputPrice(id) {
-  const lower = id.toLowerCase();
-  if (lower.includes("opus")) return 75;
-  if (lower.includes("claude")) return 15;
-  if (lower.includes("gemini")) return 10;
-  if (lower.includes("mini")) return 0.8;
-  return 3;
-}
-
-function defaultCachePrice(id) {
-  return defaultInputPrice(id) * 0.1;
-}
-
 function numberFrom(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function optionalNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function omitUndefined(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
 }
 
 function unique(values) {
