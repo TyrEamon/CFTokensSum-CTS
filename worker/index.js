@@ -263,7 +263,7 @@ async function ingestUsageQueue(env) {
 
   const count = Math.max(1, Math.min(1000, numberFrom(env.USAGE_QUEUE_COUNT, DEFAULT_QUEUE_COUNT)));
   const url = `${baseUrl}/v0/management/usage-queue?count=${count}`;
-  const headers = buildCliProxyHeaders(env);
+  const headers = buildCliProxyHeaders(env, { includeApiKey: false });
 
   const response = await fetch(url, {
     headers,
@@ -307,10 +307,10 @@ async function fetchCliProxyModels(env) {
   return response.json();
 }
 
-function buildCliProxyHeaders(env) {
+function buildCliProxyHeaders(env, { includeApiKey = true } = {}) {
   const headers = new Headers({ accept: "application/json" });
   const apiKey = String(env.CLIPROXY_API_KEY || "").trim();
-  if (apiKey) headers.set("Authorization", apiKey.toLowerCase().startsWith("bearer ") ? apiKey : `Bearer ${apiKey}`);
+  if (includeApiKey && apiKey) headers.set("Authorization", apiKey.toLowerCase().startsWith("bearer ") ? apiKey : `Bearer ${apiKey}`);
 
   const rawHeader = String(env.CLIPROXY_AUTH_HEADER || "").trim();
   if (rawHeader.includes(":")) {
