@@ -16,18 +16,45 @@ Then visit the Vite URL, normally:
 http://127.0.0.1:5177/
 ```
 
-## Cloudflare Pages
+## Cloudflare Worker + D1
 
-Use **Cloudflare Dashboard -> Workers & Pages -> Pages -> Create application -> Connect to Git**.
+This project is a full Cloudflare Worker app:
 
-- Repository: `TyrEamon/CFTokensSum-CTS`
-- Framework preset: `Vite`
-- Root directory: leave empty
-- Build command: `npm run build`
-- Build output directory: `dist`
-- Node.js version: `22` is fine; `18+` also works
+- Vite builds the static dashboard into `dist`
+- Worker serves the dashboard assets
+- Worker APIs read/write D1
+- Worker Cron pulls CLIProxyAPI usage queue every 5 minutes
 
-No runtime environment variables are required for the static dashboard.
+### Required Cloudflare setup
+
+1. Create a D1 database, for example `cftokenssum-cts`.
+2. Deploy this repo as a **Worker**, not a plain Pages-only static site.
+3. In the Worker settings, add a D1 binding:
+
+```text
+Variable name: DB
+D1 database: cftokenssum-cts
+```
+
+4. Add Worker runtime variables:
+
+```text
+CLIPROXY_BASE_URL=https://your-cliproxy-domain.example.com
+USAGE_QUEUE_COUNT=500
+```
+
+Optional auth variables if your CLIProxy management endpoint requires headers:
+
+```text
+CLIPROXY_API_KEY=your-token
+CLIPROXY_AUTH_HEADER=X-Custom-Header: value
+CLIPROXY_HEADERS_JSON={"X-Another-Header":"value"}
+ADMIN_TOKEN=long-random-token
+```
+
+CLIProxyAPI must enable in-memory usage aggregation, otherwise `/v0/management/usage-queue?count=500` will have nothing useful to collect.
+
+The Worker creates the D1 tables automatically on first API/cron run. The SQL is also kept in `migrations/0001_init.sql` for reference.
 
 ## What It Uses
 
@@ -47,7 +74,7 @@ The Model Management page supports:
 - Manual model creation
 - Local price editing
 
-Prices are stored per 1M tokens in `localStorage`.
+Prices are configured per 1M tokens. In production they are saved to D1 through `/api/models`; `localStorage` is only a browser fallback when the Worker API is unavailable.
 
 ## Login Behavior
 

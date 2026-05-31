@@ -75,6 +75,7 @@ function App() {
   const [auth, setAuth] = useState(loadAuthSettings);
   const [session, setSession] = useState(loadSession);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
 
   const isAuthConfigured = Boolean(auth?.passwordHash);
   const isLoggedIn = Boolean(isAuthConfigured && session?.username === auth.username);
@@ -82,7 +83,14 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.models, JSON.stringify(models));
-  }, [models]);
+    if (!remoteLoaded) return undefined;
+    const timer = window.setTimeout(() => saveModelsToApi(models), 650);
+    return () => window.clearTimeout(timer);
+  }, [models, remoteLoaded]);
+
+  useEffect(() => {
+    refreshData({ silent: true });
+  }, []);
 
   const summary = useMemo(() => getUsageSummary(logs, models), [logs, models]);
   const aggregates = useMemo(() => aggregateByModel(logs, models), [logs, models]);
@@ -106,6 +114,34 @@ function App() {
     setToast(message);
     window.clearTimeout(notify.timer);
     notify.timer = window.setTimeout(() => setToast("就绪"), 2600);
+  }
+
+  async function refreshData({ silent = false } = {}) {
+    setRefreshing(true);
+    try {
+      const state = await apiJson("/api/state");
+      setModels(normalizeModels(state.models || []));
+      setLogs(normalizeUsageLogs(state.logs || []));
+      setRemoteLoaded(true);
+      if (!silent) notify("已从 D1 刷新数据");
+    } catch (error) {
+      setRemoteLoaded(false);
+      if (!silent) notify(`D1 API 不可用：${error.message}`);
+    } finally {
+      window.setTimeout(() => setRefreshing(false), 350);
+    }
+  }
+
+  async function saveModelsToApi(nextModels) {
+    try {
+      await apiJson("/api/models", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ models: nextModels }),
+      });
+    } catch {
+      // Keep local editing smooth when the D1 API is unavailable.
+    }
   }
 
   function goPage(nextPage) {
@@ -185,9 +221,7 @@ function App() {
   }
 
   function refreshDemo() {
-    setRefreshing(true);
-    notify("已刷新当前数据");
-    window.setTimeout(() => setRefreshing(false), 700);
+    refreshData();
   }
 
   async function importFromEndpoint() {
@@ -1211,6 +1245,36 @@ function rankSpec(aggregates, total) {
     bar: { style: { cornerRadius: 2 }, state: { hover: { stroke: "#000", lineWidth: 1 } } },
     animationAppear: { preset: "grow", duration: 820, easing: "cubicOut" },
   };
+}
+
+async function apiJson(path, options = {}) {
+  const response = await fetch(path, {
+    cache: "no-store",
+    ...options,
+    headers: {
+      accept: "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+function normalizeUsageLogs(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => ({
+    ts: row.ts || new Date().toISOString(),
+    requestId: row.requestId || row.request_id || "",
+    provider: row.provider || getProvider(row, row.model || ""),
+    model: row.model || "",
+    inputTokens: numberFrom(row.inputTokens ?? row.input_tokens, 0),
+    outputTokens: numberFrom(row.outputTokens ?? row.output_tokens, 0),
+    cachedTokens: numberFrom(row.cachedTokens ?? row.cached_tokens, 0),
+    totalTokens: numberFrom(row.totalTokens ?? row.total_tokens, 0),
+    failed: Boolean(row.failed),
+    status: numberFrom(row.status, row.failed ? 500 : 200),
+    latency: numberFrom(row.latency, 0),
+  })).filter((row) => row.model);
 }
 
 function loadModels() {
