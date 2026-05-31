@@ -47,25 +47,7 @@ const chartOption = {
   mode: "desktop-browser",
 };
 
-const demoModels = [
-  { id: "gpt-5.5", provider: "codex", tag: "main", inputPrice: 1.6, outputPrice: 8, cachePrice: 0.2, enabled: true },
-  { id: "claude-opus-4-8", provider: "claude", tag: "high", inputPrice: 15, outputPrice: 75, cachePrice: 1.5, enabled: true },
-  { id: "gpt-5.3-codex", provider: "codex", tag: "coding", inputPrice: 1.2, outputPrice: 6, cachePrice: 0.16, enabled: true },
-  { id: "claude-sonnet-4-6", provider: "claude", tag: "balanced", inputPrice: 3, outputPrice: 15, cachePrice: 0.3, enabled: true },
-  { id: "gemini-2.5-pro", provider: "gemini", tag: "long-context", inputPrice: 1.25, outputPrice: 10, cachePrice: 0.125, enabled: true },
-  { id: "grok-4.20-fast", provider: "xai", tag: "fast", inputPrice: 0.8, outputPrice: 3.6, cachePrice: 0.1, enabled: true },
-  { id: "grok-4.20-0309-console", provider: "xai", tag: "console", inputPrice: 1.1, outputPrice: 5.2, cachePrice: 0.12, enabled: false },
-];
-
-const colorMap = {
-  "gpt-5.5": "#375984",
-  "claude-opus-4-8": "#009d94",
-  "gpt-5.3-codex": "#f5df65",
-  "claude-sonnet-4-6": "#e94c9c",
-  "gemini-2.5-pro": "#7c6cff",
-  "grok-4.20-fast": "#22c55e",
-  "grok-4.20-0309-console": "#f97316",
-};
+const colorMap = {};
 
 const navItems = [
   { id: "dashboard", label: "数据看板", icon: LayoutDashboard },
@@ -78,7 +60,7 @@ function App() {
   const [page, setPage] = useState("dashboard");
   const [activeChart, setActiveChart] = useState("distribution");
   const [models, setModels] = useState(loadModels);
-  const [logs, setLogs] = useState(() => buildDemoLogs(loadModels()));
+  const [logs, setLogs] = useState([]);
   const [modelSearch, setModelSearch] = useState("");
   const [modelStatus, setModelStatus] = useState("all");
   const [logSearch, setLogSearch] = useState("");
@@ -204,8 +186,7 @@ function App() {
 
   function refreshDemo() {
     setRefreshing(true);
-    setLogs(buildDemoLogs(models, Date.now()));
-    notify("已刷新演示用量数据");
+    notify("已刷新当前数据");
     window.setTimeout(() => setRefreshing(false), 700);
   }
 
@@ -279,9 +260,10 @@ function App() {
   }
 
   function resetModels() {
-    setModels(cloneModels(demoModels));
-    setLogs(buildDemoLogs(demoModels, Date.now()));
-    notify("已重置模型和演示数据");
+    setModels([]);
+    setLogs([]);
+    localStorage.removeItem(STORAGE_KEYS.models);
+    notify("已清空本地模型和用量数据");
   }
 
   function deleteModel(id) {
@@ -323,7 +305,7 @@ function App() {
         )}
         <button className="nav-item secondary" type="button" onClick={refreshDemo}>
           <RefreshCw size={19} className={refreshing ? "spin" : ""} />
-          <span>刷新样本</span>
+          <span>刷新数据</span>
         </button>
         <div className="sidebar-foot">
           <span className="brand-dot" />
@@ -704,7 +686,7 @@ function ModelsPage(props) {
               <option value="enabled">仅启用</option>
               <option value="disabled">仅停用</option>
             </select>
-            <button className="danger-btn" type="button" onClick={resetModels}>重置示例</button>
+            <button className="danger-btn" type="button" onClick={resetModels}>清空本地</button>
           </div>
         </header>
         <div className="table-wrap">
@@ -1003,7 +985,7 @@ function ImportModal({ open, onClose, jsonPaste, setJsonPaste, importPastedJSON,
             <strong>选择 JSON 文件</strong>
             <small>或直接在下面粘贴内容</small>
           </label>
-          <textarea className="json-area" value={jsonPaste} onChange={(event) => setJsonPaste(event.target.value)} placeholder='例如：{"data":[{"id":"gpt-5.5"}]}' />
+          <textarea className="json-area" value={jsonPaste} onChange={(event) => setJsonPaste(event.target.value)} placeholder='例如：{"data":[{"id":"model-name"}]}' />
         </div>
         <footer className="modal-footer">
           <span className="muted">{toast}</span>
@@ -1236,9 +1218,9 @@ function loadModels() {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.models));
     if (Array.isArray(saved) && saved.length) return saved;
   } catch {
-    // Keep the demo defaults when localStorage is empty or broken.
+    // Ignore broken local model data.
   }
-  return cloneModels(demoModels);
+  return [];
 }
 
 function loadAuthSettings() {
@@ -1342,30 +1324,6 @@ function getTag(item) {
   return String(item.tag ?? item.group ?? item.category ?? item.type ?? "imported").trim();
 }
 
-function buildDemoLogs(models, seed = Date.now()) {
-  const active = models.filter((model) => model.enabled);
-  const pool = active.length ? active : demoModels;
-  return Array.from({ length: 72 }, (_, index) => {
-    const model = pool[index % pool.length];
-    const inputTokens = 1400 + ((index * 997) % 78000);
-    const outputTokens = 700 + ((index * 613) % 32000);
-    const cachedTokens = index % 3 === 0 ? inputTokens * 2 : 0;
-    return {
-      ts: new Date(seed - index * 17 * 60 * 1000).toISOString(),
-      requestId: `req-${seed.toString(36).slice(-4)}-${String(index).padStart(3, "0")}`,
-      provider: model.provider,
-      model: model.id,
-      inputTokens,
-      outputTokens,
-      cachedTokens,
-      totalTokens: inputTokens + outputTokens,
-      failed: index % 23 === 0,
-      status: index % 23 === 0 ? 504 : 200,
-      latency: 360 + ((index * 73) % 3200),
-    };
-  });
-}
-
 function getUsageSummary(logs, models) {
   const tokens = logs.reduce((sum, log) => sum + log.totalTokens, 0);
   const cost = logs.reduce((sum, log) => sum + costForLog(log, models), 0);
@@ -1458,10 +1416,6 @@ function uniqueModelId(models, base) {
   let index = 1;
   while (models.some((model) => model.id === id)) id = `${base}-${index++}`;
   return id;
-}
-
-function cloneModels(models) {
-  return models.map((model) => ({ ...model }));
 }
 
 function defaultInputPrice(id) {

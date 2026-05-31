@@ -99,7 +99,7 @@ Dark, dense, operational console inspired by NewAPI `/console`. The interface sh
 - Do keep all controls at least 44px touch target where clickable.
 - Do make model import resilient to multiple JSON shapes.
 - Do persist user-edited model prices locally.
-- Do keep dashboard useful with demo data.
+- Do keep dashboard useful with empty states when backend data is unavailable.
 - Do use inline SVG icons, not emoji icons.
 - Do avoid token/user-ranking/personal-center modules.
 - Don't copy NewAPI source wholesale.

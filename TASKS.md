@@ -47,7 +47,7 @@ The result should look and behave like a compact NewAPI-style admin dashboard, b
 
 ## Data Assumptions
 
-- Dashboard can run with demo data when no backend exists.
+- Dashboard starts empty when no backend data exists.
 - `/model` import accepts common formats:
   - Array of strings
   - Array of objects with `id`, `name`, or `model`

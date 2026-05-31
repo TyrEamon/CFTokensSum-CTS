@@ -41,7 +41,7 @@ No runtime environment variables are required for the static dashboard.
 
 The Model Management page supports:
 
-- Fetching local `/model` from `public/model`
+- Fetching your own `/model` or `/models` endpoint
 - JSON file import
 - Paste JSON import
 - Manual model creation
