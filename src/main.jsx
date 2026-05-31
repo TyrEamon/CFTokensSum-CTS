@@ -1430,7 +1430,7 @@ function buildTimeBuckets(logs, models) {
     .slice(0, 8)
     .map((item) => item.model);
 
-  return bucketStarts.map((start) => {
+  const buckets = bucketStarts.map((start) => {
     const end = start + hour;
     const dt = new Date(start);
     const label = `${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:00`;
@@ -1454,6 +1454,16 @@ function buildTimeBuckets(logs, models) {
       models: modelsInBucket,
     };
   });
+
+  const firstDataIndex = buckets.findIndex((bucket) => bucket.requests > 0);
+  if (firstDataIndex < 0) return buckets;
+
+  let lastDataIndex = buckets.length - 1;
+  while (lastDataIndex > firstDataIndex && buckets[lastDataIndex].requests === 0) {
+    lastDataIndex -= 1;
+  }
+
+  return buckets.slice(firstDataIndex, lastDataIndex + 1);
 }
 
 function costForLog(log, models) {
