@@ -1,0 +1,27 @@
+{
+  "name": "Token 控制台",
+  "short_name": "Token",
+  "description": "CLIProxy 用量、模型价格和请求记录控制台",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#111216",
+  "theme_color": "#111216",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/token-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/token-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
