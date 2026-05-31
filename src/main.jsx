@@ -37,12 +37,6 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
-const STORAGE_KEYS = {
-  models: "cliproxy-console.models",
-  auth: "cliproxy-console.auth",
-  session: "cliproxy-console.session",
-};
-
 const chartOption = {
   mode: "desktop-browser",
 };
@@ -59,7 +53,7 @@ const navItems = [
 function App() {
   const [page, setPage] = useState("dashboard");
   const [activeChart, setActiveChart] = useState("distribution");
-  const [models, setModels] = useState(loadModels);
+  const [models, setModels] = useState([]);
   const [logs, setLogs] = useState([]);
   const [modelSearch, setModelSearch] = useState("");
   const [modelStatus, setModelStatus] = useState("all");
@@ -72,24 +66,24 @@ function App() {
   const [modelApiKey, setModelApiKey] = useState("");
   const [toast, setToast] = useState("就绪");
   const [refreshing, setRefreshing] = useState(false);
-  const [auth, setAuth] = useState(loadAuthSettings);
-  const [session, setSession] = useState(loadSession);
+  const [auth, setAuth] = useState({ configured: false, user: null, session: null });
   const [loginOpen, setLoginOpen] = useState(false);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
 
-  const isAuthConfigured = Boolean(auth?.passwordHash);
-  const isLoggedIn = Boolean(isAuthConfigured && session?.username === auth.username);
+  const isAuthConfigured = Boolean(auth.configured);
+  const isLoggedIn = Boolean(auth.user?.username);
+  const authUsername = auth.user?.username || "admin";
   const visibleNavItems = isLoggedIn ? navItems : navItems.filter((item) => item.id === "dashboard");
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.models, JSON.stringify(models));
-    if (!remoteLoaded) return undefined;
+    if (!remoteLoaded || !isLoggedIn) return undefined;
     const timer = window.setTimeout(() => saveModelsToApi(models), 650);
     return () => window.clearTimeout(timer);
-  }, [models, remoteLoaded]);
+  }, [models, remoteLoaded, isLoggedIn]);
 
   useEffect(() => {
     refreshData({ silent: true });
+    refreshAuth({ silent: true });
   }, []);
 
   const summary = useMemo(() => getUsageSummary(logs, models), [logs, models]);
@@ -132,6 +126,16 @@ function App() {
     }
   }
 
+  async function refreshAuth({ silent = false } = {}) {
+    try {
+      const state = await apiJson("/api/auth/status");
+      setAuth(state);
+    } catch (error) {
+      setAuth({ configured: false, user: null, session: null });
+      if (!silent) notify(`登录状态不可用：${error.message}`);
+    }
+  }
+
   async function saveModelsToApi(nextModels) {
     try {
       await apiJson("/api/models", {
@@ -160,34 +164,27 @@ function App() {
       return;
     }
 
-    const passwordHash = await sha256(password);
-    if (!isAuthConfigured) {
-      const nextAuth = { username: cleanUsername, passwordHash, updatedAt: new Date().toISOString() };
-      saveAuthSettings(nextAuth);
+    try {
+      const nextAuth = await apiJson(isAuthConfigured ? "/api/auth/login" : "/api/auth/setup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: cleanUsername, password }),
+      });
       setAuth(nextAuth);
-      const nextSession = { username: cleanUsername, loggedInAt: new Date().toISOString() };
-      saveSession(nextSession);
-      setSession(nextSession);
       setLoginOpen(false);
-      notify("已创建登录账号");
-      return;
+      notify(isAuthConfigured ? "已登录" : "已创建 D1 登录账号");
+    } catch (error) {
+      notify(`登录失败：${error.message}`);
     }
-
-    if (cleanUsername !== auth.username || passwordHash !== auth.passwordHash) {
-      notify("用户名或密码不正确");
-      return;
-    }
-
-    const nextSession = { username: auth.username, loggedInAt: new Date().toISOString() };
-    saveSession(nextSession);
-    setSession(nextSession);
-    setLoginOpen(false);
-    notify("已登录");
   }
 
-  function handleLogout() {
-    clearSession();
-    setSession(null);
+  async function handleLogout() {
+    try {
+      await apiJson("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Still clear the local UI state if the logout request fails.
+    }
+    setAuth((current) => ({ ...current, user: null, session: null, configured: current.configured || true }));
     setPage("dashboard");
     notify("已退出登录");
   }
@@ -198,26 +195,21 @@ function App() {
       notify("用户名不能为空");
       return;
     }
-    const currentHash = await sha256(currentPassword);
-    if (currentHash !== auth.passwordHash) {
-      notify("当前密码不正确");
-      return;
-    }
     if (nextPassword && nextPassword !== confirmPassword) {
       notify("两次输入的新密码不一致");
       return;
     }
-    const nextAuth = {
-      username: cleanUsername,
-      passwordHash: nextPassword ? await sha256(nextPassword) : auth.passwordHash,
-      updatedAt: new Date().toISOString(),
-    };
-    saveAuthSettings(nextAuth);
-    setAuth(nextAuth);
-    const nextSession = { username: cleanUsername, loggedInAt: new Date().toISOString() };
-    saveSession(nextSession);
-    setSession(nextSession);
-    notify("个人信息已保存");
+    try {
+      const nextAuth = await apiJson("/api/auth/profile", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: cleanUsername, currentPassword, nextPassword }),
+      });
+      setAuth(nextAuth);
+      notify("个人信息已保存到 D1");
+    } catch (error) {
+      notify(`保存失败：${error.message}`);
+    }
   }
 
   function refreshDemo() {
@@ -297,8 +289,7 @@ function App() {
   function resetModels() {
     setModels([]);
     setLogs([]);
-    localStorage.removeItem(STORAGE_KEYS.models);
-    notify("已清空本地模型和用量数据");
+    notify("已清空当前视图的模型和用量数据");
   }
 
   function deleteModel(id) {
@@ -344,7 +335,7 @@ function App() {
         </button>
         <div className="sidebar-foot">
           <span className="brand-dot" />
-          <span>{isLoggedIn ? `已登录：${auth.username}` : "公开数据看板"}</span>
+          <span>{isLoggedIn ? `已登录：${authUsername}` : "公开数据看板"}</span>
         </div>
       </aside>
 
@@ -358,7 +349,7 @@ function App() {
             <p className="subtitle">CLIProxy 使用量、模型价格和请求记录的 Cloudflare 前端控制台</p>
           </div>
           <div className="top-actions">
-            {isLoggedIn && <span className="user-pill"><ShieldCheck size={16} />{auth.username}</span>}
+            {isLoggedIn && <span className="user-pill"><ShieldCheck size={16} />{authUsername}</span>}
             <button className="circle-btn" type="button" aria-label="搜索" onClick={() => (isLoggedIn ? goPage(page === "models" ? "models" : "logs") : setLoginOpen(true))}>
               <Search size={21} />
             </button>
@@ -434,7 +425,6 @@ function App() {
         {page === "profile" && isLoggedIn && (
           <ProfilePage
             auth={auth}
-            session={session}
             onSave={handleProfileSave}
             onLogout={handleLogout}
           />
@@ -454,7 +444,7 @@ function App() {
       <LoginModal
         open={loginOpen}
         configured={isAuthConfigured}
-        username={auth?.username || "admin"}
+        username={authUsername}
         onClose={() => setLoginOpen(false)}
         onSubmit={handleLoginSubmit}
         toast={toast}
@@ -836,15 +826,17 @@ function LogsPage({ rows, logs, models, providerOptions, logSearch, setLogSearch
   );
 }
 
-function ProfilePage({ auth, session, onSave, onLogout }) {
-  const [username, setUsername] = useState(auth.username);
+function ProfilePage({ auth, onSave, onLogout }) {
+  const user = auth.user || {};
+  const session = auth.session || {};
+  const [username, setUsername] = useState(user.username || "");
   const [currentPassword, setCurrentPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
-    setUsername(auth.username);
-  }, [auth.username]);
+    setUsername(user.username || "");
+  }, [user.username]);
 
   async function submit(event) {
     event.preventDefault();
@@ -859,7 +851,7 @@ function ProfilePage({ auth, session, onSave, onLogout }) {
       <div className="section-toolbar">
         <div>
           <h2>个人信息</h2>
-          <p>设置本地登录用户名和密码。这个登录层用于前端界面访问控制，真正公开部署仍建议加 Cloudflare Access。</p>
+          <p>设置 D1 中保存的登录用户名和密码。这个登录层用于界面访问控制，真正公开部署仍建议加 Cloudflare Access。</p>
         </div>
         <div className="toolbar-actions">
           <button className="danger-btn" type="button" onClick={onLogout}>
@@ -904,7 +896,7 @@ function ProfilePage({ auth, session, onSave, onLogout }) {
           <div className="auth-summary">
             <div className="summary-row">
               <span>当前用户</span>
-              <strong>{auth.username}</strong>
+              <strong>{user.username || "未知"}</strong>
             </div>
             <div className="summary-row">
               <span>登录时间</span>
@@ -912,11 +904,11 @@ function ProfilePage({ auth, session, onSave, onLogout }) {
             </div>
             <div className="summary-row">
               <span>密码更新时间</span>
-              <strong>{auth.updatedAt ? formatDateTime(auth.updatedAt) : "未知"}</strong>
+              <strong>{user.updatedAt ? formatDateTime(user.updatedAt) : "未知"}</strong>
             </div>
             <div className="security-note">
               <ShieldCheck size={18} />
-              <p>用户名和密码哈希保存在当前浏览器 localStorage。它适合防误入和个人使用，不适合作为公网强安全边界。</p>
+              <p>用户名和 PBKDF2 密码哈希保存在 D1，浏览器只保存 HttpOnly 会话 Cookie，不再保存密码哈希。</p>
             </div>
           </div>
         </article>
@@ -949,7 +941,7 @@ function LoginModal({ open, configured, username, onClose, onSubmit, toast }) {
         <header className="modal-header">
           <div>
             <h2 id="loginTitle">{configured ? "登录控制台" : "设置登录账号"}</h2>
-            <p>{configured ? "登录后可以访问模型管理、使用日志和个人信息。" : "首次使用先创建一个本地用户名和密码。"}</p>
+            <p>{configured ? "登录后可以访问模型管理、使用日志和个人信息。" : "首次使用会在 D1 创建一个用户名和密码哈希。"}</p>
           </div>
           <button className="circle-btn" type="button" aria-label="关闭" onClick={onClose}><X size={20} /></button>
         </header>
@@ -961,7 +953,7 @@ function LoginModal({ open, configured, username, onClose, onSubmit, toast }) {
           <SecureInput label="密码" value={password} onChange={setPassword} autoComplete={configured ? "current-password" : "new-password"} />
           <div className="security-note">
             <LockKeyhole size={18} />
-            <p>未登录时只展示数据看板。这个本地登录不会隐藏前端源码，公网强保护请再套 Cloudflare Access。</p>
+            <p>未登录时只展示数据看板。账号信息保存在 D1，公网强保护仍建议再套 Cloudflare Access。</p>
           </div>
           <footer className="modal-footer inline-footer">
             <span className="muted">{toast}</span>
@@ -1251,13 +1243,23 @@ function rankSpec(aggregates, total) {
 async function apiJson(path, options = {}) {
   const response = await fetch(path, {
     cache: "no-store",
+    credentials: "same-origin",
     ...options,
     headers: {
       accept: "application/json",
       ...(options.headers || {}),
     },
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const body = await response.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // Keep the HTTP status when the error body is not JSON.
+    }
+    throw new Error(message);
+  }
   return response.json();
 }
 
@@ -1276,57 +1278,6 @@ function normalizeUsageLogs(rows) {
     status: numberFrom(row.status, row.failed ? 500 : 200),
     latency: numberFrom(row.latency, 0),
   })).filter((row) => row.model);
-}
-
-function loadModels() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.models));
-    if (Array.isArray(saved) && saved.length) return saved;
-  } catch {
-    // Ignore broken local model data.
-  }
-  return [];
-}
-
-function loadAuthSettings() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.auth));
-    if (saved?.username && saved?.passwordHash) return saved;
-  } catch {
-    // Ignore broken auth state and let the user create credentials again.
-  }
-  return { username: "admin", passwordHash: "", updatedAt: "" };
-}
-
-function saveAuthSettings(auth) {
-  localStorage.setItem(STORAGE_KEYS.auth, JSON.stringify(auth));
-}
-
-function loadSession() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.session));
-    if (saved?.username) return saved;
-  } catch {
-    // Ignore broken session state.
-  }
-  return null;
-}
-
-function saveSession(session) {
-  localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-}
-
-function clearSession() {
-  localStorage.removeItem(STORAGE_KEYS.session);
-}
-
-async function sha256(value) {
-  const encoded = new TextEncoder().encode(value);
-  if (!globalThis.crypto?.subtle) {
-    return Array.from(encoded, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  }
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", encoded);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function normalizeModels(payload) {

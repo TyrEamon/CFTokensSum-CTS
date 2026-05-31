@@ -1,5 +1,8 @@
 const DEFAULT_QUEUE_COUNT = 500;
 const DEFAULT_USAGE_LIMIT = 5000;
+const AUTH_COOKIE = "cts_session";
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const PASSWORD_ITERATIONS = 120000;
 
 let schemaReady;
 
@@ -12,7 +15,7 @@ export default {
       try {
         return cors(await handleApi(request, env, ctx));
       } catch (error) {
-        return cors(json({ error: error.message || "Internal error" }, 500));
+        return cors(json({ error: error.message || "Internal error" }, error.status || 500));
       }
     }
 
@@ -36,6 +39,30 @@ async function handleApi(request, env, ctx) {
     return json({ ok: true, hasDatabase: Boolean(env.DB), hasCliProxy: Boolean(env.CLIPROXY_BASE_URL) });
   }
 
+  if (request.method === "GET" && path === "/api/auth/status") {
+    return json(await authStatus(db, request));
+  }
+
+  if (request.method === "POST" && path === "/api/auth/setup") {
+    const body = await request.json();
+    return setupAuth(db, body);
+  }
+
+  if (request.method === "POST" && path === "/api/auth/login") {
+    const body = await request.json();
+    return loginAuth(db, body);
+  }
+
+  if (request.method === "POST" && path === "/api/auth/logout") {
+    return logoutAuth(db, request);
+  }
+
+  if (request.method === "PUT" && path === "/api/auth/profile") {
+    const session = await requireAdmin(request, env, db);
+    const body = await request.json();
+    return updateAuthProfile(db, session, body);
+  }
+
   if (request.method === "GET" && path === "/api/state") {
     const [models, logs, meta] = await Promise.all([
       listModels(db),
@@ -54,7 +81,7 @@ async function handleApi(request, env, ctx) {
   }
 
   if (request.method === "PUT" && path === "/api/models") {
-    requireAdmin(request, env);
+    await requireAdmin(request, env, db);
     const body = await request.json();
     const models = normalizeModels(body?.models ?? body?.data ?? body);
     await replaceModels(db, models);
@@ -66,7 +93,7 @@ async function handleApi(request, env, ctx) {
   }
 
   if (request.method === "POST" && path === "/api/usage") {
-    requireAdmin(request, env);
+    await requireAdmin(request, env, db);
     const payload = await request.json();
     const logs = normalizeUsagePayload(payload);
     const result = await insertUsageLogs(db, logs);
@@ -74,7 +101,7 @@ async function handleApi(request, env, ctx) {
   }
 
   if (request.method === "POST" && path === "/api/ingest") {
-    requireAdmin(request, env);
+    await requireAdmin(request, env, db);
     return json(await ingestUsageQueue(env));
   }
 
@@ -124,6 +151,24 @@ async function ensureSchema(db) {
         value TEXT,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS auth_users (
+        username TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        token_hash TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TEXT NOT NULL,
+        FOREIGN KEY (username) REFERENCES auth_users(username) ON UPDATE CASCADE ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_auth_sessions_username ON auth_sessions(username);
+      CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
     `);
   }
   return schemaReady;
@@ -296,6 +341,259 @@ async function setMeta(db, key, value) {
   `).bind(key, value).run();
 }
 
+async function authStatus(db, request) {
+  const configured = await hasAuthUser(db);
+  const session = await getSessionUser(db, request);
+  return {
+    configured,
+    user: session ? publicUser(session) : null,
+    session: session ? { loggedInAt: session.loggedInAt, expiresAt: session.expiresAt } : null,
+  };
+}
+
+async function setupAuth(db, body) {
+  if (await hasAuthUser(db)) return json({ error: "Auth is already configured" }, 409);
+  const username = cleanUsername(body?.username);
+  const password = String(body?.password || "");
+  validateCredentials(username, password);
+
+  const passwordHash = await hashPassword(password);
+  await db.prepare(`
+    INSERT INTO auth_users (username, password_hash, created_at, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `).bind(username, passwordHash).run();
+
+  return issueSessionResponse(db, username, 201);
+}
+
+async function loginAuth(db, body) {
+  const username = cleanUsername(body?.username);
+  const password = String(body?.password || "");
+  const user = await getAuthUser(db, username);
+  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    return json({ error: "Invalid username or password" }, 401);
+  }
+  return issueSessionResponse(db, username);
+}
+
+async function logoutAuth(db, request) {
+  const token = getCookie(request, AUTH_COOKIE);
+  if (token) {
+    await db.prepare("DELETE FROM auth_sessions WHERE token_hash = ?").bind(await sha256Hex(token)).run();
+  }
+  const response = json({ status: "ok" });
+  response.headers.append("Set-Cookie", clearAuthCookie());
+  return response;
+}
+
+async function updateAuthProfile(db, session, body) {
+  const currentPassword = String(body?.currentPassword || "");
+  const nextPassword = String(body?.nextPassword || "");
+  const nextUsername = cleanUsername(body?.username);
+  validateUsername(nextUsername);
+
+  const user = await getAuthUser(db, session.username);
+  if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) {
+    return json({ error: "Current password is incorrect" }, 401);
+  }
+
+  const passwordHash = nextPassword ? await hashPassword(nextPassword) : user.passwordHash;
+  if (nextPassword) validatePassword(nextPassword);
+
+  if (nextUsername !== session.username && await getAuthUser(db, nextUsername)) {
+    return json({ error: "Username is already in use" }, 409);
+  }
+
+  await db.batch([
+    db.prepare(`
+      UPDATE auth_users
+      SET username = ?, password_hash = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE username = ?
+    `).bind(nextUsername, passwordHash, session.username),
+    db.prepare(`
+      UPDATE auth_sessions
+      SET username = ?
+      WHERE username = ?
+    `).bind(nextUsername, session.username),
+  ]);
+
+  const nextSession = await getSessionUserByHash(db, session.tokenHash);
+  return json({
+    configured: true,
+    user: publicUser(nextSession),
+    session: { loggedInAt: nextSession.loggedInAt, expiresAt: nextSession.expiresAt },
+  });
+}
+
+async function hasAuthUser(db) {
+  const row = await db.prepare("SELECT username FROM auth_users LIMIT 1").first();
+  return Boolean(row);
+}
+
+async function getAuthUser(db, username) {
+  if (!username) return null;
+  const row = await db.prepare(`
+    SELECT username, password_hash, created_at, updated_at
+    FROM auth_users
+    WHERE username = ?
+  `).bind(username).first();
+  if (!row) return null;
+  return {
+    username: row.username,
+    passwordHash: row.password_hash,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function getSessionUser(db, request) {
+  const token = getCookie(request, AUTH_COOKIE);
+  if (!token) return null;
+  return getSessionUserByHash(db, await sha256Hex(token));
+}
+
+async function getSessionUserByHash(db, tokenHash) {
+  const row = await db.prepare(`
+    SELECT s.token_hash, s.username, s.created_at AS logged_in_at, s.expires_at,
+           u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    FROM auth_sessions s
+    JOIN auth_users u ON u.username = s.username
+    WHERE s.token_hash = ? AND datetime(s.expires_at) > datetime('now')
+  `).bind(tokenHash).first();
+  if (!row) return null;
+  return {
+    tokenHash: row.token_hash,
+    username: row.username,
+    loggedInAt: row.logged_in_at,
+    expiresAt: row.expires_at,
+    createdAt: row.user_created_at,
+    updatedAt: row.user_updated_at,
+  };
+}
+
+async function issueSessionResponse(db, username, status = 200) {
+  const token = randomHex(32);
+  const tokenHash = await sha256Hex(token);
+  const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000).toISOString();
+  await db.prepare(`
+    INSERT INTO auth_sessions (token_hash, username, created_at, expires_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP, ?)
+  `).bind(tokenHash, username, expiresAt).run();
+
+  const session = await getSessionUserByHash(db, tokenHash);
+  const response = json({
+    configured: true,
+    user: publicUser(session),
+    session: { loggedInAt: session.loggedInAt, expiresAt: session.expiresAt },
+  }, status);
+  response.headers.append("Set-Cookie", authCookie(token, SESSION_MAX_AGE_SECONDS));
+  return response;
+}
+
+function publicUser(user) {
+  if (!user) return null;
+  return {
+    username: user.username,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
+function validateCredentials(username, password) {
+  validateUsername(username);
+  validatePassword(password);
+}
+
+function validateUsername(username) {
+  if (!username || username.length < 2 || username.length > 64) {
+    throw httpError("Username must be 2-64 characters", 400);
+  }
+}
+
+function validatePassword(password) {
+  if (!password || password.length < 6) {
+    throw httpError("Password must be at least 6 characters", 400);
+  }
+}
+
+function cleanUsername(value) {
+  return String(value || "").trim();
+}
+
+async function hashPassword(password) {
+  const salt = randomBytes(16);
+  const hash = await pbkdf2(password, salt, PASSWORD_ITERATIONS);
+  return `pbkdf2$${PASSWORD_ITERATIONS}$${bytesToHex(salt)}$${bytesToHex(hash)}`;
+}
+
+async function verifyPassword(password, stored) {
+  const [kind, iterationsText, saltHex, hashHex] = String(stored || "").split("$");
+  if (kind !== "pbkdf2" || !iterationsText || !saltHex || !hashHex) return false;
+  const hash = await pbkdf2(password, hexToBytes(saltHex), Number(iterationsText) || PASSWORD_ITERATIONS);
+  return timingSafeEqual(bytesToHex(hash), hashHex);
+}
+
+async function pbkdf2(password, salt, iterations) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+    key,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function randomBytes(length) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return bytes;
+}
+
+function randomHex(length) {
+  return bytesToHex(randomBytes(length));
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function timingSafeEqual(left, right) {
+  const a = String(left || "");
+  const b = String(right || "");
+  let diff = a.length ^ b.length;
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    diff |= a.charCodeAt(index) ^ b.charCodeAt(index);
+  }
+  return diff === 0;
+}
+
+function getCookie(request, name) {
+  const cookie = request.headers.get("Cookie") || "";
+  const prefix = `${name}=`;
+  return cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(prefix))?.slice(prefix.length) || "";
+}
+
+function authCookie(token, maxAge) {
+  return `${AUTH_COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+function clearAuthCookie() {
+  return `${AUTH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
+}
+
 function normalizeModels(payload) {
   const list = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
   return list.map((item) => {
@@ -374,14 +672,15 @@ function rowToUsageLog(row) {
   };
 }
 
-function requireAdmin(request, env) {
+async function requireAdmin(request, env, db) {
   const token = String(env.ADMIN_TOKEN || "").trim();
-  if (!token) return;
   const auth = request.headers.get("Authorization") || "";
   const headerToken = request.headers.get("X-Admin-Token") || "";
   const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
-  if (bearer === token || headerToken === token) return;
-  throw new Error("Unauthorized");
+  if (token && (bearer === token || headerToken === token)) return { username: "admin-token" };
+  const session = await getSessionUser(db, request);
+  if (session) return session;
+  throw httpError("Unauthorized", 401);
 }
 
 function normalizeTimestamp(value) {
@@ -461,6 +760,12 @@ function json(data, status = 200) {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+function httpError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
 }
 
 function cors(response) {

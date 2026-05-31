@@ -76,11 +76,12 @@ The Model Management page supports:
 - Manual model creation
 - Local price editing
 
-Prices are configured per 1M tokens. In production they are saved to D1 through `/api/models`; `localStorage` is only a browser fallback when the Worker API is unavailable.
+Prices are configured per 1M tokens and saved to D1 through `/api/models`. If the Worker or D1 API is unavailable, edits only live in the current page memory and are not persisted.
 
 ## Login Behavior
 
 - Public visitors can only see the data dashboard.
-- First login creates a local username/password in browser `localStorage`.
+- First login creates a username and PBKDF2 password hash in D1.
+- Browser auth uses an HttpOnly `cts_session` cookie; username/password hashes are not stored in `localStorage`.
 - Logged-in users can open model management, usage logs, and personal information.
 - This is a front-end access gate only. For real public protection, put Cloudflare Access in front of the site.
