@@ -103,6 +103,10 @@ function App() {
     () => buildChartSpec(activeChart, buckets, aggregates, summary),
     [activeChart, buckets, aggregates, summary],
   );
+  const chartDataKey = useMemo(
+    () => buildChartDataKey(activeChart, buckets, aggregates, summary),
+    [activeChart, buckets, aggregates, summary],
+  );
 
   function notify(message) {
     setToast(message);
@@ -376,6 +380,7 @@ function App() {
             activeChart={activeChart}
             setActiveChart={setActiveChart}
             chartSpec={chartSpec}
+            chartDataKey={chartDataKey}
             aggregates={aggregates}
             logs={logs}
             models={models}
@@ -455,7 +460,7 @@ function App() {
   );
 }
 
-function DashboardPage({ summary, activeModels, activeChart, setActiveChart, chartSpec, aggregates, logs, models, setPage }) {
+function DashboardPage({ summary, activeModels, activeChart, setActiveChart, chartSpec, chartDataKey, aggregates, logs, models, setPage }) {
   const metricGroups = [
     {
       title: "账户数据",
@@ -523,7 +528,7 @@ function DashboardPage({ summary, activeModels, activeChart, setActiveChart, cha
             </div>
           </header>
           <div className="chart-wrap">
-            <VChart key={activeChart} spec={chartSpec} option={chartOption} />
+            <VChart key={chartDataKey} spec={chartSpec} option={chartOption} />
           </div>
         </article>
 
@@ -1083,6 +1088,22 @@ function buildChartSpec(activeChart, buckets, aggregates, summary) {
   if (activeChart === "count") return pieSpec(aggregates, summary.logs);
   if (activeChart === "rank") return rankSpec(aggregates, summary.logs);
   return distributionSpec(buckets, summary.cost);
+}
+
+function buildChartDataKey(activeChart, buckets, aggregates, summary) {
+  const bucketKey = buckets
+    .map((bucket) => {
+      const modelKey = bucket.models
+        .map((item) => `${item.model}:${item.count}:${item.cost.toFixed(8)}`)
+        .join(",");
+      return `${bucket.label}:${bucket.requests}:${modelKey}`;
+    })
+    .join("|");
+  const aggregateKey = aggregates
+    .slice(0, 8)
+    .map((item) => `${item.model}:${item.count}:${item.cost.toFixed(8)}`)
+    .join("|");
+  return `${activeChart}:${summary.logs}:${summary.cost.toFixed(8)}:${bucketKey}:${aggregateKey}`;
 }
 
 function baseChart(title, subtext) {
