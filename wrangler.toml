@@ -16,6 +16,7 @@ crons = ["*/5 * * * *"]
 # Optional runtime variables:
 # CLIPROXY_BASE_URL = "https://your-cliproxy.example.com"
 # USAGE_QUEUE_COUNT = "500"
+# CLIPROXY_MODELS_PATH = "/v1/models"
 # CLIPROXY_API_KEY = "optional bearer token if your management endpoint requires it"
 # CLIPROXY_AUTH_HEADER = "X-Custom-Header: optional-value"
 # CLIPROXY_HEADERS_JSON = "{\"X-Another-Header\":\"value\"}"

@@ -49,6 +49,10 @@ async function handleApi(request, env, ctx) {
     return json({ data: await listModels(db) });
   }
 
+  if (request.method === "GET" && path === "/api/cliproxy-models") {
+    return json(await fetchCliProxyModels(env));
+  }
+
   if (request.method === "PUT" && path === "/api/models") {
     requireAdmin(request, env);
     const body = await request.json();
@@ -237,6 +241,25 @@ async function ingestUsageQueue(env) {
   await setMeta(db, "last_ingest_received", String(result.received));
   await setMeta(db, "last_ingest_inserted", String(result.inserted));
   return { ...result, source: url };
+}
+
+async function fetchCliProxyModels(env) {
+  const baseUrl = String(env.CLIPROXY_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (!baseUrl) throw new Error("CLIPROXY_BASE_URL is not configured");
+
+  const modelsPath = String(env.CLIPROXY_MODELS_PATH || "/v1/models").trim() || "/v1/models";
+  const url = `${baseUrl}${modelsPath.startsWith("/") ? modelsPath : `/${modelsPath}`}`;
+  const response = await fetch(url, {
+    headers: buildCliProxyHeaders(env),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`CLIProxy models HTTP ${response.status}: ${body.slice(0, 300)}`);
+  }
+
+  return response.json();
 }
 
 function buildCliProxyHeaders(env) {

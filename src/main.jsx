@@ -68,7 +68,7 @@ function App() {
   const [logStatus, setLogStatus] = useState("all");
   const [importOpen, setImportOpen] = useState(false);
   const [jsonPaste, setJsonPaste] = useState("");
-  const [modelEndpoint, setModelEndpoint] = useState("/model");
+  const [modelEndpoint, setModelEndpoint] = useState("/api/cliproxy-models");
   const [modelApiKey, setModelApiKey] = useState("");
   const [toast, setToast] = useState("就绪");
   const [refreshing, setRefreshing] = useState(false);
@@ -225,10 +225,11 @@ function App() {
   }
 
   async function importFromEndpoint() {
-    const endpoint = (modelEndpoint || "/model").trim();
+    const endpoint = (modelEndpoint || "/api/cliproxy-models").trim();
     const apiKey = modelApiKey.trim();
     const headers = { accept: "application/json" };
-    if (apiKey) headers.Authorization = apiKey.toLowerCase().startsWith("bearer ") ? apiKey : `Bearer ${apiKey}`;
+    const usesWorkerModelProxy = endpoint === "/api/cliproxy-models" || endpoint.startsWith("/api/cliproxy-models?");
+    if (apiKey && !usesWorkerModelProxy) headers.Authorization = apiKey.toLowerCase().startsWith("bearer ") ? apiKey : `Bearer ${apiKey}`;
 
     try {
       notify(`正在请求 ${endpoint}...`);
@@ -677,11 +678,11 @@ function ModelsPage(props) {
 
   return (
     <section className="page active">
-      <div className="section-toolbar">
-        <div>
-          <h2>模型管理</h2>
-          <p>导入 `/model` 测出的 JSON，为每个模型配置输入、输出、缓存价格。</p>
-        </div>
+        <div className="section-toolbar">
+          <div>
+            <h2>模型管理</h2>
+            <p>默认通过 Worker 后端拉取 CLIProxy `/v1/models`，再为模型配置输入、输出、缓存价格。</p>
+          </div>
         <div className="toolbar-actions">
           <input className="input endpoint-input" value={modelEndpoint} onChange={(event) => setModelEndpoint(event.target.value)} aria-label="模型接口地址" />
           <input
@@ -689,7 +690,7 @@ function ModelsPage(props) {
             type="password"
             value={modelApiKey}
             onChange={(event) => setModelApiKey(event.target.value)}
-            placeholder="临时 API Key（不保存）"
+            placeholder="直连外部接口时临时 Key"
             aria-label="临时 API Key"
             autoComplete="off"
             spellCheck="false"
@@ -757,7 +758,7 @@ function ModelsPage(props) {
                   </tr>
                 );
               })}
-              {!models.length && <tr><td colSpan="9">没有匹配的模型，可以从 /model 导入，或手动新增。</td></tr>}
+              {!models.length && <tr><td colSpan="9">没有匹配的模型，可以从 CLIProxy /v1/models 导入，或手动新增。</td></tr>}
             </tbody>
           </table>
         </div>

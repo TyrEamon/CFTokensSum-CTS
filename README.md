@@ -41,6 +41,7 @@ D1 database: cftokenssum-cts
 ```text
 CLIPROXY_BASE_URL=https://your-cliproxy-domain.example.com
 USAGE_QUEUE_COUNT=500
+CLIPROXY_MODELS_PATH=/v1/models
 ```
 
 Optional auth variables if your CLIProxy management endpoint requires headers:
@@ -68,7 +69,8 @@ The Worker creates the D1 tables automatically on first API/cron run. The SQL is
 
 The Model Management page supports:
 
-- Fetching your own `/model` or `/models` endpoint
+- Fetching CLIProxy `/v1/models` through the Worker endpoint `/api/cliproxy-models`
+- Fetching your own direct model endpoint when needed
 - JSON file import
 - Paste JSON import
 - Manual model creation
