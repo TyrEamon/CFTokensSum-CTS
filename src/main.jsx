@@ -42,6 +42,7 @@ const chartOption = {
 };
 
 const colorMap = {};
+const initialLogRange = getTodayLogRange();
 
 const navItems = [
   { id: "dashboard", label: "数据看板", icon: LayoutDashboard },
@@ -60,6 +61,10 @@ function App() {
   const [logSearch, setLogSearch] = useState("");
   const [logProvider, setLogProvider] = useState("all");
   const [logStatus, setLogStatus] = useState("all");
+  const [logStartDraft, setLogStartDraft] = useState(initialLogRange.start);
+  const [logEndDraft, setLogEndDraft] = useState(initialLogRange.end);
+  const [logStart, setLogStart] = useState(initialLogRange.start);
+  const [logEnd, setLogEnd] = useState(initialLogRange.end);
   const [importOpen, setImportOpen] = useState(false);
   const [jsonPaste, setJsonPaste] = useState("");
   const [modelEndpoint, setModelEndpoint] = useState("/api/cliproxy-models");
@@ -94,8 +99,8 @@ function App() {
     [models, modelSearch, modelStatus],
   );
   const filteredLogs = useMemo(
-    () => filterLogs(logs, logSearch, logProvider, logStatus),
-    [logs, logSearch, logProvider, logStatus],
+    () => filterLogs(logs, logSearch, logProvider, logStatus, logStart, logEnd),
+    [logs, logSearch, logProvider, logStatus, logStart, logEnd],
   );
   const providerOptions = useMemo(() => unique(logs.map((log) => log.provider)), [logs]);
   const activeModels = models.filter((model) => model.enabled);
@@ -112,6 +117,24 @@ function App() {
     setToast(message);
     window.clearTimeout(notify.timer);
     notify.timer = window.setTimeout(() => setToast("就绪"), 2600);
+  }
+
+  function applyLogFilters() {
+    setLogStart(logStartDraft);
+    setLogEnd(logEndDraft);
+    notify(!logStartDraft && !logEndDraft ? "已查询全部日期日志" : "已应用日志时间范围");
+  }
+
+  function resetLogFilters() {
+    const range = getTodayLogRange();
+    setLogSearch("");
+    setLogProvider("all");
+    setLogStatus("all");
+    setLogStartDraft(range.start);
+    setLogEndDraft(range.end);
+    setLogStart(range.start);
+    setLogEnd(range.end);
+    notify("已重置为今日日志");
   }
 
   async function refreshData({ silent = false } = {}) {
@@ -424,6 +447,12 @@ function App() {
             setLogProvider={setLogProvider}
             logStatus={logStatus}
             setLogStatus={setLogStatus}
+            logStartDraft={logStartDraft}
+            setLogStartDraft={setLogStartDraft}
+            logEndDraft={logEndDraft}
+            setLogEndDraft={setLogEndDraft}
+            applyLogFilters={applyLogFilters}
+            resetLogFilters={resetLogFilters}
           />
         )}
 
@@ -762,7 +791,24 @@ function ModelsPage(props) {
   );
 }
 
-function LogsPage({ rows, logs, models, providerOptions, logSearch, setLogSearch, logProvider, setLogProvider, logStatus, setLogStatus }) {
+function LogsPage({
+  rows,
+  logs,
+  models,
+  providerOptions,
+  logSearch,
+  setLogSearch,
+  logProvider,
+  setLogProvider,
+  logStatus,
+  setLogStatus,
+  logStartDraft,
+  setLogStartDraft,
+  logEndDraft,
+  setLogEndDraft,
+  applyLogFilters,
+  resetLogFilters,
+}) {
   return (
     <section className="page active">
       <div className="section-toolbar">
@@ -770,8 +816,28 @@ function LogsPage({ rows, logs, models, providerOptions, logSearch, setLogSearch
           <h2>使用日志</h2>
           <p>查看按模型价格估算后的请求成本、Token 和状态。</p>
         </div>
-        <div className="toolbar-actions">
-          <input className="input" value={logSearch} onChange={(event) => setLogSearch(event.target.value)} placeholder="搜索模型或请求 ID" />
+        <div className="log-filter-panel">
+          <div className="log-time-range">
+            <input
+              className="input time-input"
+              type="datetime-local"
+              step="1"
+              value={logStartDraft}
+              onChange={(event) => setLogStartDraft(event.target.value)}
+              aria-label="日志开始时间"
+            />
+            <span>~</span>
+            <input
+              className="input time-input"
+              type="datetime-local"
+              step="1"
+              value={logEndDraft}
+              onChange={(event) => setLogEndDraft(event.target.value)}
+              aria-label="日志结束时间"
+            />
+          </div>
+          <div className="toolbar-actions">
+          <input className="input search-input" value={logSearch} onChange={(event) => setLogSearch(event.target.value)} placeholder="搜索模型或请求 ID" />
           <select className="input" value={logProvider} onChange={(event) => setLogProvider(event.target.value)} aria-label="Provider 筛选">
             <option value="all">全部 Provider</option>
             {providerOptions.map((provider) => <option value={provider} key={provider}>{provider}</option>)}
@@ -781,6 +847,9 @@ function LogsPage({ rows, logs, models, providerOptions, logSearch, setLogSearch
             <option value="success">成功</option>
             <option value="failed">失败</option>
           </select>
+          <button className="primary-btn compact" type="button" onClick={applyLogFilters}>查询</button>
+          <button className="ghost-btn compact" type="button" onClick={resetLogFilters}>重置</button>
+        </div>
         </div>
       </div>
       <article className="panel motion-card">
@@ -1502,15 +1571,42 @@ function filterModels(models, search, status) {
   });
 }
 
-function filterLogs(logs, search, provider, status) {
+function filterLogs(logs, search, provider, status, startValue, endValue) {
   const q = search.trim().toLowerCase();
+  const startTime = dateTimeLocalToTimestamp(startValue);
+  const endTime = dateTimeLocalToTimestamp(endValue);
   return logs.filter((log) => {
     const haystack = `${log.model} ${log.provider} ${log.requestId}`.toLowerCase();
+    const time = new Date(log.ts).getTime();
     const matchSearch = !q || haystack.includes(q);
     const matchProvider = provider === "all" || log.provider === provider;
     const matchStatus = status === "all" || (status === "success" && !log.failed) || (status === "failed" && log.failed);
-    return matchSearch && matchProvider && matchStatus;
+    const matchStart = !Number.isFinite(startTime) || (Number.isFinite(time) && time >= startTime);
+    const matchEnd = !Number.isFinite(endTime) || (Number.isFinite(time) && time <= endTime);
+    return matchSearch && matchProvider && matchStatus && matchStart && matchEnd;
   });
+}
+
+function getTodayLogRange() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setHours(23, 59, 59, 999);
+  return {
+    start: toDateTimeLocalValue(start),
+    end: toDateTimeLocalValue(end),
+  };
+}
+
+function toDateTimeLocalValue(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function dateTimeLocalToTimestamp(value) {
+  if (!value) return NaN;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : NaN;
 }
 
 function uniqueModelId(models, base) {

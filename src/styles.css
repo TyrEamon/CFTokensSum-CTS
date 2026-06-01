@@ -557,6 +557,34 @@ textarea::placeholder {
   width: min(320px, 100%);
 }
 
+.log-filter-panel {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+  min-width: min(760px, 100%);
+}
+
+.log-time-range {
+  width: min(760px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.log-time-range > span {
+  color: var(--muted);
+  font-weight: 760;
+}
+
+.time-input {
+  width: 100%;
+}
+
+.search-input {
+  width: min(230px, 100%);
+}
+
 .model-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1235,6 +1263,21 @@ textarea::placeholder {
   .table-tools {
     align-items: stretch;
     width: 100%;
+  }
+
+  .log-filter-panel {
+    width: 100%;
+    justify-items: stretch;
+  }
+
+  .log-time-range {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .log-time-range > span {
+    text-align: center;
+    line-height: 1;
   }
 
   .section-toolbar {
