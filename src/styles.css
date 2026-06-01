@@ -604,7 +604,7 @@ textarea::placeholder {
   top: calc(100% + 8px);
   right: 0;
   z-index: 40;
-  width: min(680px, calc(100vw - 28px));
+  width: min(720px, calc(100vw - 28px));
   border: 1px solid rgba(var(--white-rgb), .12);
   border-radius: 10px;
   background: #44464d;
@@ -612,6 +612,52 @@ textarea::placeholder {
   box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
   overflow: hidden;
   animation: pickerIn .16s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.dual-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding: 14px 18px 10px;
+}
+
+.calendar-pane {
+  min-width: 0;
+}
+
+.calendar-pane-nav {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+
+.calendar-pane-nav button {
+  width: 29px;
+  height: 29px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #c9cbd1;
+  display: grid;
+  place-items: center;
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+
+.calendar-pane-nav button:hover {
+  background: rgba(var(--white-rgb), .12);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.calendar-pane-nav strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 820;
+  text-align: center;
 }
 
 .log-day-picker {
@@ -627,17 +673,16 @@ textarea::placeholder {
   --rdp-range_middle-background-color: rgba(91, 141, 239, .18);
   --rdp-range_middle-color: var(--text);
   margin: 0;
-  padding: 16px 18px 14px;
+  padding: 0;
 }
 
 .log-day-picker .rdp-months {
   justify-content: center;
 }
 
-.log-day-picker .rdp-caption_label {
-  color: var(--text);
-  font-size: 16px;
-  font-weight: 820;
+.log-day-picker .rdp-month_caption,
+.log-day-picker .rdp-nav {
+  display: none;
 }
 
 .log-day-picker .rdp-weekday {
@@ -1424,12 +1469,16 @@ textarea::placeholder {
     overflow-y: auto;
   }
 
+  .dual-calendar-grid {
+    grid-template-columns: 1fr;
+    padding: 12px 14px 10px;
+  }
+
   .log-day-picker {
     --rdp-day-width: 38px;
     --rdp-day-height: 38px;
     --rdp-day_button-width: 34px;
     --rdp-day_button-height: 34px;
-    padding: 14px 12px 12px;
   }
 
   .range-time-row {

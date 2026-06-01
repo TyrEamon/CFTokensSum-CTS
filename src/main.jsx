@@ -7,6 +7,10 @@ import {
   BarChart3,
   Boxes,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   CircleDollarSign,
   Clock,
   Database,
@@ -47,6 +51,7 @@ const chartOption = {
 
 const colorMap = {};
 const initialLogRange = getTodayLogRange();
+const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
 
 const navItems = [
   { id: "dashboard", label: "数据看板", icon: LayoutDashboard },
@@ -895,11 +900,20 @@ function LogRangePicker({ startValue, endValue, onStartChange, onEndChange }) {
   const [open, setOpen] = useState(false);
   const pickerRef = useRef(null);
   const compact = useMediaQuery("(max-width: 720px)");
+  const initialMonths = useMemo(() => getCalendarMonths(startValue, endValue), [startValue, endValue]);
+  const [leftMonth, setLeftMonth] = useState(initialMonths.left);
+  const [rightMonth, setRightMonth] = useState(initialMonths.right);
   const selectedRange = useMemo(() => ({
     from: dateOnlyFromDateTimeLocal(startValue),
     to: dateOnlyFromDateTimeLocal(endValue),
   }), [startValue, endValue]);
   const displayText = formatLogRangeText(startValue, endValue);
+
+  useEffect(() => {
+    if (!open) return;
+    setLeftMonth(initialMonths.left);
+    setRightMonth(initialMonths.right);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -943,8 +957,25 @@ function LogRangePicker({ startValue, endValue, onStartChange, onEndChange }) {
     const range = getLogRangePreset(kind);
     onStartChange(range.start);
     onEndChange(range.end);
+    const months = getCalendarMonths(range.start, range.end);
+    setLeftMonth(months.left);
+    setRightMonth(months.right);
     setOpen(false);
   }
+
+  const calendarProps = {
+    mode: "range",
+    selected: selectedRange.from || selectedRange.to ? selectedRange : undefined,
+    onSelect: selectRange,
+    weekStartsOn: 0,
+    fixedWeeks: true,
+    showOutsideDays: true,
+    hideNavigation: true,
+    className: "log-day-picker",
+    formatters: {
+      formatWeekdayName: (date) => WEEKDAY_LABELS[date.getDay()],
+    },
+  };
 
   return (
     <div className="log-range-picker" ref={pickerRef}>
@@ -954,16 +985,20 @@ function LogRangePicker({ startValue, endValue, onStartChange, onEndChange }) {
       </button>
       {open && (
         <div className="range-popover" role="dialog" aria-label="日志日期范围选择">
-          <DayPicker
-            mode="range"
-            selected={selectedRange.from || selectedRange.to ? selectedRange : undefined}
-            onSelect={selectRange}
-            numberOfMonths={compact ? 1 : 2}
-            weekStartsOn={1}
-            fixedWeeks
-            showOutsideDays
-            className="log-day-picker"
-          />
+          <div className="dual-calendar-grid">
+            <CalendarPane
+              month={leftMonth}
+              setMonth={setLeftMonth}
+              calendarProps={calendarProps}
+            />
+            {!compact && (
+              <CalendarPane
+                month={rightMonth}
+                setMonth={setRightMonth}
+                calendarProps={calendarProps}
+              />
+            )}
+          </div>
           <div className="range-time-row">
             <label>
               <Calendar size={15} />
@@ -992,6 +1027,34 @@ function LogRangePicker({ startValue, endValue, onStartChange, onEndChange }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CalendarPane({ month, setMonth, calendarProps }) {
+  return (
+    <div className="calendar-pane">
+      <div className="calendar-pane-nav">
+        <button type="button" aria-label="上一年" onClick={() => setMonth(addYears(month, -1))}>
+          <ChevronsLeft size={18} />
+        </button>
+        <button type="button" aria-label="上一月" onClick={() => setMonth(addMonths(month, -1))}>
+          <ChevronLeft size={18} />
+        </button>
+        <strong>{formatMonthTitle(month)}</strong>
+        <button type="button" aria-label="下一月" onClick={() => setMonth(addMonths(month, 1))}>
+          <ChevronRight size={18} />
+        </button>
+        <button type="button" aria-label="下一年" onClick={() => setMonth(addYears(month, 1))}>
+          <ChevronsRight size={18} />
+        </button>
+      </div>
+      <DayPicker
+        {...calendarProps}
+        month={month}
+        onMonthChange={setMonth}
+        numberOfMonths={1}
+      />
     </div>
   );
 }
@@ -1727,6 +1790,35 @@ function dateOnlyFromDateTimeLocal(value) {
   const [year, month, day] = datePart.split("-").map(Number);
   if (!year || !month || !day) return undefined;
   return new Date(year, month - 1, day);
+}
+
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function getCalendarMonths(startValue, endValue) {
+  const startDate = dateOnlyFromDateTimeLocal(startValue);
+  const endDate = dateOnlyFromDateTimeLocal(endValue);
+  const left = startOfMonth(startDate || endDate || new Date());
+  let right = endDate ? startOfMonth(endDate) : addMonths(left, 1);
+  if (monthKey(right) <= monthKey(left)) right = addMonths(left, 1);
+  return { left, right };
+}
+
+function monthKey(date) {
+  return date.getFullYear() * 12 + date.getMonth();
+}
+
+function addMonths(date, amount) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function addYears(date, amount) {
+  return new Date(date.getFullYear() + amount, date.getMonth(), 1);
+}
+
+function formatMonthTitle(date) {
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
 }
 
 function timeFromDateTimeLocal(value, fallback) {
