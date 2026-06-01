@@ -564,17 +564,148 @@ textarea::placeholder {
   min-width: min(760px, 100%);
 }
 
-.log-time-range {
+.log-range-picker {
+  position: relative;
   width: min(760px, 100%);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
 }
 
-.log-time-range > span {
-  color: var(--muted);
+.range-trigger {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  text-align: left;
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.range-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.range-trigger:hover,
+.range-trigger.open {
+  border-color: rgba(var(--blue-rgb), .62);
+  background: #20232d;
+  box-shadow: 0 0 0 3px rgba(var(--blue-rgb), .12);
+}
+
+.range-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(680px, calc(100vw - 28px));
+  border: 1px solid rgba(var(--white-rgb), .12);
+  border-radius: 10px;
+  background: #44464d;
+  color: var(--text);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+  overflow: hidden;
+  animation: pickerIn .16s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.log-day-picker {
+  --rdp-accent-color: #5b8def;
+  --rdp-accent-background-color: rgba(91, 141, 239, .26);
+  --rdp-day-width: 40px;
+  --rdp-day-height: 40px;
+  --rdp-day_button-width: 36px;
+  --rdp-day_button-height: 36px;
+  --rdp-day_button-border-radius: 6px;
+  --rdp-selected-border: 0;
+  --rdp-months-gap: 34px;
+  --rdp-range_middle-background-color: rgba(91, 141, 239, .18);
+  --rdp-range_middle-color: var(--text);
+  margin: 0;
+  padding: 16px 18px 14px;
+}
+
+.log-day-picker .rdp-months {
+  justify-content: center;
+}
+
+.log-day-picker .rdp-caption_label {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 820;
+}
+
+.log-day-picker .rdp-weekday {
+  color: #c9cbd1;
+  font-size: 13px;
   font-weight: 760;
+}
+
+.log-day-picker .rdp-day_button {
+  color: var(--text);
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+
+.log-day-picker .rdp-day_button:hover {
+  background: rgba(var(--white-rgb), .12);
+  transform: translateY(-1px);
+}
+
+.log-day-picker .rdp-outside {
+  color: rgba(248, 250, 252, .38);
+}
+
+.range-time-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid rgba(var(--white-rgb), .08);
+  border-bottom: 1px solid rgba(var(--white-rgb), .08);
+}
+
+.range-time-row label {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  color: var(--text);
+  font-weight: 720;
+}
+
+.range-time-row input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.range-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 9px;
+  padding: 10px 20px;
+}
+
+.range-shortcuts button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--white-rgb), .13);
+  color: var(--text);
+  font-weight: 760;
+  transition: background .16s ease, transform .16s ease;
+}
+
+.range-shortcuts button:hover {
+  background: rgba(var(--white-rgb), .22);
+  transform: translateY(-1px);
 }
 
 .time-input {
@@ -1057,6 +1188,17 @@ textarea::placeholder {
   }
 }
 
+@keyframes pickerIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes floatSoft {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-5px); }
@@ -1270,14 +1412,33 @@ textarea::placeholder {
     justify-items: stretch;
   }
 
-  .log-time-range {
-    grid-template-columns: 1fr;
-    gap: 6px;
+  .log-range-picker {
+    width: 100%;
   }
 
-  .log-time-range > span {
-    text-align: center;
-    line-height: 1;
+  .range-popover {
+    position: fixed;
+    inset: auto 10px max(10px, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: min(86svh, 720px);
+    overflow-y: auto;
+  }
+
+  .log-day-picker {
+    --rdp-day-width: 38px;
+    --rdp-day-height: 38px;
+    --rdp-day_button-width: 34px;
+    --rdp-day_button-height: 34px;
+    padding: 14px 12px 12px;
+  }
+
+  .range-time-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .range-shortcuts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 10px 14px 12px;
   }
 
   .section-toolbar {

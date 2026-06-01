@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { VChart } from "@visactor/react-vchart";
+import { DayPicker } from "react-day-picker";
 import {
   Activity,
   BarChart3,
   Boxes,
+  Calendar,
   CircleDollarSign,
+  Clock,
   Database,
   Download,
   Eye,
@@ -35,6 +38,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import "react-day-picker/style.css";
 import "./styles.css";
 
 const chartOption = {
@@ -817,25 +821,12 @@ function LogsPage({
           <p>查看按模型价格估算后的请求成本、Token 和状态。</p>
         </div>
         <div className="log-filter-panel">
-          <div className="log-time-range">
-            <input
-              className="input time-input"
-              type="datetime-local"
-              step="1"
-              value={logStartDraft}
-              onChange={(event) => setLogStartDraft(event.target.value)}
-              aria-label="日志开始时间"
-            />
-            <span>~</span>
-            <input
-              className="input time-input"
-              type="datetime-local"
-              step="1"
-              value={logEndDraft}
-              onChange={(event) => setLogEndDraft(event.target.value)}
-              aria-label="日志结束时间"
-            />
-          </div>
+          <LogRangePicker
+            startValue={logStartDraft}
+            endValue={logEndDraft}
+            onStartChange={setLogStartDraft}
+            onEndChange={setLogEndDraft}
+          />
           <div className="toolbar-actions">
           <input className="input search-input" value={logSearch} onChange={(event) => setLogSearch(event.target.value)} placeholder="搜索模型或请求 ID" />
           <select className="input" value={logProvider} onChange={(event) => setLogProvider(event.target.value)} aria-label="Provider 筛选">
@@ -897,6 +888,111 @@ function LogsPage({
         </div>
       </article>
     </section>
+  );
+}
+
+function LogRangePicker({ startValue, endValue, onStartChange, onEndChange }) {
+  const [open, setOpen] = useState(false);
+  const pickerRef = useRef(null);
+  const compact = useMediaQuery("(max-width: 720px)");
+  const selectedRange = useMemo(() => ({
+    from: dateOnlyFromDateTimeLocal(startValue),
+    to: dateOnlyFromDateTimeLocal(endValue),
+  }), [startValue, endValue]);
+  const displayText = formatLogRangeText(startValue, endValue);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function handlePointerDown(event) {
+      if (pickerRef.current && !pickerRef.current.contains(event.target)) setOpen(false);
+    }
+    function handleKeyDown(event) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  function selectRange(range) {
+    if (!range?.from) {
+      onStartChange("");
+      onEndChange("");
+      return;
+    }
+    const from = range.from;
+    const to = range.to || range.from;
+    onStartChange(combineDateAndTime(from, timeFromDateTimeLocal(startValue, "00:00:00")));
+    onEndChange(combineDateAndTime(to, timeFromDateTimeLocal(endValue, "23:59:59")));
+  }
+
+  function setStartTime(value) {
+    const date = dateOnlyFromDateTimeLocal(startValue) || new Date();
+    onStartChange(combineDateAndTime(date, value || "00:00:00"));
+  }
+
+  function setEndTime(value) {
+    const date = dateOnlyFromDateTimeLocal(endValue) || dateOnlyFromDateTimeLocal(startValue) || new Date();
+    onEndChange(combineDateAndTime(date, value || "23:59:59"));
+  }
+
+  function applyPreset(kind) {
+    const range = getLogRangePreset(kind);
+    onStartChange(range.start);
+    onEndChange(range.end);
+    setOpen(false);
+  }
+
+  return (
+    <div className="log-range-picker" ref={pickerRef}>
+      <button className={`range-trigger ${open ? "open" : ""}`} type="button" onClick={() => setOpen((value) => !value)}>
+        <Calendar size={17} />
+        <span>{displayText}</span>
+      </button>
+      {open && (
+        <div className="range-popover" role="dialog" aria-label="日志日期范围选择">
+          <DayPicker
+            mode="range"
+            selected={selectedRange.from || selectedRange.to ? selectedRange : undefined}
+            onSelect={selectRange}
+            numberOfMonths={compact ? 1 : 2}
+            weekStartsOn={1}
+            fixedWeeks
+            showOutsideDays
+            className="log-day-picker"
+          />
+          <div className="range-time-row">
+            <label>
+              <Calendar size={15} />
+              <span>{dateLabel(startValue, "开始日期")}</span>
+            </label>
+            <label>
+              <Clock size={15} />
+              <input type="time" step="1" value={timeFromDateTimeLocal(startValue, "00:00:00")} onChange={(event) => setStartTime(event.target.value)} />
+            </label>
+            <label>
+              <Calendar size={15} />
+              <span>{dateLabel(endValue, "结束日期")}</span>
+            </label>
+            <label>
+              <Clock size={15} />
+              <input type="time" step="1" value={timeFromDateTimeLocal(endValue, "23:59:59")} onChange={(event) => setEndTime(event.target.value)} />
+            </label>
+          </div>
+          <div className="range-shortcuts">
+            <button type="button" onClick={() => applyPreset("today")}>今天</button>
+            <button type="button" onClick={() => applyPreset("last7")}>近 7 天</button>
+            <button type="button" onClick={() => applyPreset("week")}>本周</button>
+            <button type="button" onClick={() => applyPreset("last30")}>近 30 天</button>
+            <button type="button" onClick={() => applyPreset("month")}>本月</button>
+            <button type="button" onClick={() => applyPreset("all")}>全部</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1607,6 +1703,84 @@ function dateTimeLocalToTimestamp(value) {
   if (!value) return NaN;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : NaN;
+}
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => (typeof window === "undefined" ? false : window.matchMedia(query).matches));
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    if (media.addEventListener) {
+      media.addEventListener("change", update);
+      return () => media.removeEventListener("change", update);
+    }
+    media.addListener(update);
+    return () => media.removeListener(update);
+  }, [query]);
+  return matches;
+}
+
+function dateOnlyFromDateTimeLocal(value) {
+  if (!value) return undefined;
+  const [datePart] = value.split("T");
+  const [year, month, day] = datePart.split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  return new Date(year, month - 1, day);
+}
+
+function timeFromDateTimeLocal(value, fallback) {
+  if (!value || !value.includes("T")) return fallback;
+  const time = value.split("T")[1] || "";
+  const parts = time.split(":");
+  if (parts.length < 2) return fallback;
+  return `${parts[0].padStart(2, "0")}:${parts[1].padStart(2, "0")}:${(parts[2] || "00").padStart(2, "0")}`;
+}
+
+function combineDateAndTime(date, time) {
+  const [hours = "00", minutes = "00", seconds = "00"] = String(time || "00:00:00").split(":");
+  const next = new Date(date);
+  next.setHours(Number(hours) || 0, Number(minutes) || 0, Number(seconds) || 0, 0);
+  return toDateTimeLocalValue(next);
+}
+
+function dateLabel(value, fallback) {
+  const date = dateOnlyFromDateTimeLocal(value);
+  if (!date) return fallback;
+  const pad = (item) => String(item).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function formatLogRangeText(startValue, endValue) {
+  if (!startValue && !endValue) return "全部日期";
+  const start = startValue ? startValue.replace("T", " ") : "开始时间";
+  const end = endValue ? endValue.replace("T", " ") : "结束时间";
+  return `${start} ~ ${end}`;
+}
+
+function getLogRangePreset(kind) {
+  if (kind === "all") return { start: "", end: "" };
+  const now = new Date();
+  const start = new Date(now);
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+
+  if (kind === "last7") {
+    start.setDate(now.getDate() - 6);
+  } else if (kind === "last30") {
+    start.setDate(now.getDate() - 29);
+  } else if (kind === "week") {
+    const day = (now.getDay() + 6) % 7;
+    start.setDate(now.getDate() - day);
+  } else if (kind === "month") {
+    start.setDate(1);
+  }
+
+  start.setHours(0, 0, 0, 0);
+  return {
+    start: toDateTimeLocalValue(start),
+    end: toDateTimeLocalValue(end),
+  };
 }
 
 function uniqueModelId(models, base) {
