@@ -1429,9 +1429,13 @@ function aggregateByModel(logs, models) {
 
 function buildTimeBuckets(logs, models) {
   const hour = 60 * 60 * 1000;
-  const currentHour = new Date();
-  currentHour.setMinutes(0, 0, 0);
-  const latestStart = currentHour.getTime();
+  const latestLogTime = logs.reduce((latest, log) => {
+    const time = new Date(log.ts).getTime();
+    return Number.isFinite(time) ? Math.max(latest, time) : latest;
+  }, 0);
+  const anchor = latestLogTime ? new Date(latestLogTime) : new Date();
+  anchor.setMinutes(0, 0, 0);
+  const latestStart = anchor.getTime();
   const bucketStarts = Array.from({ length: 7 }, (_, index) => latestStart - (6 - index) * hour);
   const firstStart = bucketStarts[0];
   const lastEnd = bucketStarts[bucketStarts.length - 1] + hour;
