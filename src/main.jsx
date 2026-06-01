@@ -329,7 +329,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isLoggedIn ? "is-authed" : "is-public"}`}>
       <aside className="sidebar">
         <div className="sidebar-title">控制台</div>
         <nav className="nav-list" aria-label="主导航">
@@ -350,17 +350,17 @@ function App() {
         </nav>
         <div className="sidebar-section">{isLoggedIn ? "数据" : "访问"}</div>
         {isLoggedIn ? (
-          <button className="nav-item secondary" type="button" onClick={() => setImportOpen(true)}>
+          <button className="nav-item secondary import-action" type="button" onClick={() => setImportOpen(true)}>
             <Upload size={19} />
             <span>导入模型</span>
           </button>
         ) : (
-          <button className="nav-item secondary" type="button" onClick={() => setLoginOpen(true)}>
+          <button className="nav-item secondary login-action" type="button" onClick={() => setLoginOpen(true)}>
             <LogIn size={19} />
             <span>{isAuthConfigured ? "登录" : "设置登录"}</span>
           </button>
         )}
-        <button className="nav-item secondary" type="button" onClick={refreshDemo}>
+        <button className="nav-item secondary refresh-action" type="button" onClick={refreshDemo}>
           <RefreshCw size={19} className={refreshing ? "spin" : ""} />
           <span>刷新数据</span>
         </button>
