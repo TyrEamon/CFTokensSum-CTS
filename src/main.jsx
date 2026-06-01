@@ -52,6 +52,7 @@ const chartOption = {
 const colorMap = {};
 const initialLogRange = getTodayLogRange();
 const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
+const DEFAULT_DISPLAY_BALANCE = 104.23;
 
 const navItems = [
   { id: "dashboard", label: "数据看板", icon: LayoutDashboard },
@@ -82,12 +83,15 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [auth, setAuth] = useState({ configured: false, user: null, session: null });
   const [loginOpen, setLoginOpen] = useState(false);
+  const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [displayBalance, setDisplayBalance] = useState(DEFAULT_DISPLAY_BALANCE);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
 
   const isAuthConfigured = Boolean(auth.configured);
   const isLoggedIn = Boolean(auth.user?.username);
   const authUsername = auth.user?.username || "admin";
   const visibleNavItems = isLoggedIn ? navItems : navItems.filter((item) => item.id === "dashboard");
+  const greetingText = `${timeGreeting()}${isLoggedIn ? `，${authUsername}` : ""}`;
 
   useEffect(() => {
     if (!remoteLoaded || !isLoggedIn) return undefined;
@@ -152,6 +156,7 @@ function App() {
       const state = await apiJson("/api/state");
       setModels(normalizeModels(state.models || []));
       setLogs(normalizeUsageLogs(state.logs || []));
+      setDisplayBalance(numberFrom(state.meta?.display_balance, DEFAULT_DISPLAY_BALANCE));
       setRemoteLoaded(true);
       if (!silent) notify("已从 D1 刷新数据");
     } catch (error) {
@@ -245,6 +250,28 @@ function App() {
       notify("个人信息已保存到 D1");
     } catch (error) {
       notify(`保存失败：${error.message}`);
+    }
+  }
+
+  async function handleRechargeSubmit(amount) {
+    if (!isLoggedIn) {
+      setLoginOpen(true);
+      notify("请先登录后修改余额");
+      return;
+    }
+
+    const nextBalance = roundMoney(displayBalance + amount);
+    try {
+      const result = await apiJson("/api/display-balance", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ balance: nextBalance }),
+      });
+      setDisplayBalance(numberFrom(result.balance, nextBalance));
+      setRechargeOpen(false);
+      notify("余额展示已更新");
+    } catch (error) {
+      notify(`充值失败：${error.message}`);
     }
   }
 
@@ -380,7 +407,7 @@ function App() {
           <div>
             <h1>
               <Sparkles className="hello-icon" size={28} />
-              晚上好，linuxdo_13107
+              {greetingText}
             </h1>
             <p className="subtitle">CLIProxy 使用量、模型价格和请求记录的 Cloudflare 前端控制台</p>
           </div>
@@ -418,6 +445,8 @@ function App() {
             models={models}
             setPage={goPage}
             isLoggedIn={isLoggedIn}
+            displayBalance={displayBalance}
+            onRecharge={() => (isLoggedIn ? setRechargeOpen(true) : setLoginOpen(true))}
           />
         )}
 
@@ -493,18 +522,26 @@ function App() {
         toast={toast}
       />
 
+      <RechargeModal
+        open={rechargeOpen && isLoggedIn}
+        balance={displayBalance}
+        onClose={() => setRechargeOpen(false)}
+        onSubmit={handleRechargeSubmit}
+        toast={toast}
+      />
+
       <div className="toast" role="status">{toast}</div>
     </div>
   );
 }
 
-function DashboardPage({ summary, activeModels, activeChart, setActiveChart, chartSpec, chartDataKey, aggregates, logs, models, setPage }) {
+function DashboardPage({ summary, activeModels, activeChart, setActiveChart, chartSpec, chartDataKey, aggregates, logs, models, setPage, isLoggedIn, displayBalance, onRecharge }) {
   const metricGroups = [
     {
       title: "账户数据",
       icon: Wallet,
       rows: [
-        { label: "当前余额", value: 104.23, format: money, icon: CircleDollarSign, color: "blue", action: "充值" },
+        { label: "当前余额", value: displayBalance, format: money, icon: CircleDollarSign, color: "blue", action: isLoggedIn ? "充值" : null, onAction: onRecharge },
         { label: "历史消耗", value: summary.cost, format: money, icon: BarChart3, color: "purple" },
       ],
     },
@@ -655,7 +692,7 @@ function MetricCard({ group, index }) {
                 <CountUp value={row.value} format={row.format} />
               </strong>
             </div>
-            {row.action && <button className="mini-pill" type="button">{row.action}</button>}
+            {row.action && <button className="mini-pill" type="button" onClick={row.onAction}>{row.action}</button>}
             {row.spark && <Sparkline values={row.spark} color={row.sparkColor} />}
           </div>
         );
@@ -1195,6 +1232,81 @@ function LoginModal({ open, configured, username, onClose, onSubmit, toast }) {
               <button className="primary-btn" type="submit">
                 <LogIn size={17} />
                 {configured ? "登录" : "创建并登录"}
+              </button>
+            </div>
+          </footer>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RechargeModal({ open, balance, onClose, onSubmit, toast }) {
+  const [amount, setAmount] = useState("10");
+  const cleanAmount = numberFrom(amount, 0);
+  const nextBalance = cleanAmount > 0 ? roundMoney(balance + cleanAmount) : balance;
+
+  useEffect(() => {
+    if (open) setAmount("10");
+  }, [open]);
+
+  if (!open) return null;
+
+  async function submit(event) {
+    event.preventDefault();
+    if (cleanAmount <= 0) return;
+    await onSubmit(cleanAmount);
+  }
+
+  return (
+    <div className="modal open" role="presentation">
+      <div className="modal-panel auth-modal recharge-modal" role="dialog" aria-modal="true" aria-labelledby="rechargeTitle">
+        <header className="modal-header">
+          <div>
+            <h2 id="rechargeTitle">充值余额</h2>
+            <p>这里是展示用余额，填多少都行，看起来像那么回事。</p>
+          </div>
+          <button className="circle-btn" type="button" aria-label="关闭" onClick={onClose}><X size={20} /></button>
+        </header>
+        <form className="modal-body recharge-form" onSubmit={submit}>
+          <div className="balance-preview">
+            <span className="round-icon blue"><CircleDollarSign size={22} /></span>
+            <div>
+              <span>当前余额</span>
+              <strong>{money(balance)}</strong>
+            </div>
+            <div>
+              <span>充值后</span>
+              <strong>{money(nextBalance)}</strong>
+            </div>
+          </div>
+          <label className="field">
+            <span>充值金额</span>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              placeholder="随便填一个金额"
+              autoFocus
+            />
+          </label>
+          <div className="quick-amounts">
+            {[10, 50, 100, 520].map((value) => (
+              <button type="button" key={value} onClick={() => setAmount(String(value))}>
+                +{money(value)}
+              </button>
+            ))}
+          </div>
+          <footer className="modal-footer inline-footer">
+            <span className="muted">{cleanAmount > 0 ? toast : "请输入大于 0 的金额"}</span>
+            <div>
+              <button className="ghost-btn" type="button" onClick={onClose}>取消</button>
+              <button className="primary-btn" type="submit" disabled={cleanAmount <= 0}>
+                <CircleDollarSign size={17} />
+                确认充值
               </button>
             </div>
           </footer>
@@ -1885,6 +1997,18 @@ function uniqueModelId(models, base) {
 function numberFrom(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function roundMoney(value) {
+  return Math.max(0, Math.round((Number(value) || 0) * 100) / 100);
+}
+
+function timeGreeting(date = new Date()) {
+  const hour = date.getHours();
+  if (hour < 11) return "早上好";
+  if (hour < 14) return "中午好";
+  if (hour < 18) return "下午好";
+  return "晚上好";
 }
 
 function optionalNumber(value) {

@@ -122,6 +122,16 @@ async function handleApi(request, env, ctx) {
     return json({ models, logs, meta });
   }
 
+  if (request.method === "PUT" && path === "/api/display-balance") {
+    await requireAdmin(request, env, db);
+    const body = await request.json();
+    const balance = numberFrom(body?.balance, NaN);
+    if (!Number.isFinite(balance) || balance < 0) return json({ error: "Invalid balance" }, 400);
+    const normalized = Math.round(balance * 100) / 100;
+    await setMeta(db, "display_balance", String(normalized));
+    return json({ status: "ok", balance: normalized });
+  }
+
   if (request.method === "GET" && path === "/api/models") {
     return json({ data: await listModels(db) });
   }
