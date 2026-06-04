@@ -52,7 +52,7 @@ const chartOption = {
 const colorMap = {};
 const initialLogRange = getTodayLogRange();
 const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
-const DEFAULT_DISPLAY_BALANCE = 104.23;
+const DEFAULT_DISPLAY_BALANCE = 0;
 
 const navItems = [
   { id: "dashboard", label: "数据看板", icon: LayoutDashboard },
@@ -260,7 +260,7 @@ function App() {
       return;
     }
 
-    const nextBalance = roundMoney(displayBalance + amount);
+    const nextBalance = roundMoney(Math.max(0, amount));
     try {
       const result = await apiJson("/api/display-balance", {
         method: "PUT",
@@ -271,7 +271,7 @@ function App() {
       setRechargeOpen(false);
       notify("余额展示已更新");
     } catch (error) {
-      notify(`充值失败：${error.message}`);
+      notify(`余额更新失败：${error.message}`);
     }
   }
 
@@ -1258,20 +1258,26 @@ function LoginModal({ open, configured, username, onClose, onSubmit, toast }) {
 }
 
 function RechargeModal({ open, balance, onClose, onSubmit, toast }) {
+  const [mode, setMode] = useState("add");
   const [amount, setAmount] = useState("10");
+  const hasAmount = amount.trim() !== "";
   const cleanAmount = numberFrom(amount, 0);
-  const nextBalance = cleanAmount > 0 ? roundMoney(balance + cleanAmount) : balance;
+  const nextBalance = mode === "set" ? roundMoney(Math.max(0, cleanAmount)) : (cleanAmount > 0 ? roundMoney(balance + cleanAmount) : balance);
+  const canSubmit = mode === "set" ? hasAmount && cleanAmount >= 0 : cleanAmount > 0;
 
   useEffect(() => {
-    if (open) setAmount("10");
+    if (open) {
+      setMode("add");
+      setAmount("10");
+    }
   }, [open]);
 
   if (!open) return null;
 
   async function submit(event) {
     event.preventDefault();
-    if (cleanAmount <= 0) return;
-    await onSubmit(cleanAmount);
+    if (!canSubmit) return;
+    await onSubmit(nextBalance);
   }
 
   return (
@@ -1279,8 +1285,8 @@ function RechargeModal({ open, balance, onClose, onSubmit, toast }) {
       <div className="modal-panel auth-modal recharge-modal" role="dialog" aria-modal="true" aria-labelledby="rechargeTitle">
         <header className="modal-header">
           <div>
-            <h2 id="rechargeTitle">充值余额</h2>
-            <p>这里是展示用余额，填多少都行，看起来像那么回事。</p>
+            <h2 id="rechargeTitle">调整余额</h2>
+            <p>这里是展示用余额，可以追加充值，也可以直接覆盖当前金额。</p>
           </div>
           <button className="circle-btn" type="button" aria-label="关闭" onClick={onClose}><X size={20} /></button>
         </header>
@@ -1292,12 +1298,16 @@ function RechargeModal({ open, balance, onClose, onSubmit, toast }) {
               <strong>{money(balance)}</strong>
             </div>
             <div>
-              <span>充值后</span>
+              <span>调整后</span>
               <strong>{money(nextBalance)}</strong>
             </div>
           </div>
+          <div className="balance-mode" role="tablist" aria-label="余额调整方式">
+            <button className={mode === "add" ? "active" : ""} type="button" onClick={() => setMode("add")}>追加充值</button>
+            <button className={mode === "set" ? "active" : ""} type="button" onClick={() => setMode("set")}>设为金额</button>
+          </div>
           <label className="field">
-            <span>充值金额</span>
+            <span>{mode === "set" ? "目标余额" : "充值金额"}</span>
             <input
               className="input"
               type="number"
@@ -1305,24 +1315,24 @@ function RechargeModal({ open, balance, onClose, onSubmit, toast }) {
               step="0.01"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
-              placeholder="随便填一个金额"
+              placeholder={mode === "set" ? "输入要显示的余额" : "输入充值金额"}
               autoFocus
             />
           </label>
           <div className="quick-amounts">
-            {[10, 50, 100, 520].map((value) => (
+            {[(mode === "set" ? 0 : 10), 50, 100, 520].map((value) => (
               <button type="button" key={value} onClick={() => setAmount(String(value))}>
-                +{money(value)}
+                {mode === "add" ? "+" : ""}{money(value)}
               </button>
             ))}
           </div>
           <footer className="modal-footer inline-footer">
-            <span className="muted">{cleanAmount > 0 ? toast : "请输入大于 0 的金额"}</span>
+            <span className="muted">{canSubmit ? toast : "请输入大于 0 的充值金额"}</span>
             <div>
               <button className="ghost-btn" type="button" onClick={onClose}>取消</button>
-              <button className="primary-btn" type="submit" disabled={cleanAmount <= 0}>
+              <button className="primary-btn" type="submit" disabled={!canSubmit}>
                 <CircleDollarSign size={17} />
-                确认充值
+                确认调整
               </button>
             </div>
           </footer>

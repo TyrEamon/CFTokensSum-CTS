@@ -876,6 +876,32 @@ textarea::placeholder {
   line-height: 1.1;
 }
 
+.balance-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: rgba(var(--white-rgb), .025);
+  padding: 5px;
+}
+
+.balance-mode button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 760;
+  transition: background .16s ease, color .16s ease;
+}
+
+.balance-mode button:hover,
+.balance-mode button.active {
+  background: rgba(var(--blue-rgb), .18);
+  color: var(--text);
+}
+
 .quick-amounts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
