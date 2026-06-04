@@ -963,6 +963,36 @@ textarea::placeholder {
   overflow-x: auto;
 }
 
+.log-token-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.log-token-stat {
+  min-height: 74px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(var(--white-rgb), .025);
+  padding: 12px;
+}
+
+.log-token-stat span {
+  display: block;
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.log-token-stat strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.15;
+}
+
 .data-table {
   width: 100%;
   min-width: 980px;
@@ -1713,6 +1743,11 @@ textarea::placeholder {
   .table-wrap {
     margin: 0 -1px;
     border-top: 1px solid var(--border-soft);
+  }
+
+  .log-token-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0 12px 12px;
   }
 
   .data-table {

@@ -589,6 +589,7 @@ function DashboardPage({ summary, activeModels, activeChart, setActiveChart, cha
             <div className="chart-tabs" role="tablist">
               {[
                 ["distribution", "消耗分布"],
+                ["tokens", "词元用量"],
                 ["trend", "调用趋势"],
                 ["count", "调用次数分布"],
                 ["rank", "调用次数排行"],
@@ -855,6 +856,13 @@ function LogsPage({
   applyLogFilters,
   resetLogFilters,
 }) {
+  const tokenSummary = useMemo(() => getLogTokenSummary(rows), [rows]);
+  const tokenStats = [
+    ["输入 Tokens", tokenSummary.inputTokens],
+    ["输出 Tokens", tokenSummary.outputTokens],
+    ["缓存 Tokens", tokenSummary.cachedTokens],
+    ["总 Tokens", tokenSummary.totalTokens],
+  ];
   return (
     <section className="page active">
       <div className="section-toolbar">
@@ -893,6 +901,14 @@ function LogsPage({
           </div>
           <span className="muted">{rows.length} 条 / 共 {logs.length} 条</span>
         </header>
+        <div className="log-token-summary" aria-label="当前筛选范围 Token 汇总">
+          {tokenStats.map(([label, value]) => (
+            <div className="log-token-stat" key={label}>
+              <span>{label}</span>
+              <strong>{integer(value)}</strong>
+            </div>
+          ))}
+        </div>
         <div className="table-wrap">
           <table className="data-table">
             <thead>
@@ -1425,6 +1441,7 @@ function NumberInput({ value, onChange }) {
 
 function buildChartSpec(activeChart, buckets, aggregates, summary) {
   if (activeChart === "trend") return trendSpec(buckets, summary.logs);
+  if (activeChart === "tokens") return tokenDistributionSpec(buckets, summary.tokens);
   if (activeChart === "count") return pieSpec(aggregates, summary.logs);
   if (activeChart === "rank") return rankSpec(aggregates, summary.logs);
   return distributionSpec(buckets, summary.cost);
@@ -1434,16 +1451,16 @@ function buildChartDataKey(activeChart, buckets, aggregates, summary) {
   const bucketKey = buckets
     .map((bucket) => {
       const modelKey = bucket.models
-        .map((item) => `${item.model}:${item.count}:${item.cost.toFixed(8)}`)
+        .map((item) => `${item.model}:${item.count}:${item.tokens}:${item.cost.toFixed(8)}`)
         .join(",");
       return `${bucket.label}:${bucket.requests}:${modelKey}`;
     })
     .join("|");
   const aggregateKey = aggregates
     .slice(0, 8)
-    .map((item) => `${item.model}:${item.count}:${item.cost.toFixed(8)}`)
+    .map((item) => `${item.model}:${item.count}:${item.tokens}:${item.cost.toFixed(8)}`)
     .join("|");
-  return `${activeChart}:${summary.logs}:${summary.cost.toFixed(8)}:${bucketKey}:${aggregateKey}`;
+  return `${activeChart}:${summary.logs}:${summary.tokens}:${summary.cost.toFixed(8)}:${bucketKey}:${aggregateKey}`;
 }
 
 function baseChart(title, subtext) {
@@ -1542,6 +1559,24 @@ function distributionSpec(buckets, totalCost) {
     stack: true,
     axes: axisStyle(),
     padding: { top: 62, right: 28, bottom: 44, left: 56 },
+    color: { specified: colorMap },
+    bar: { style: { cornerRadius: 2 }, state: { hover: { stroke: "#000", lineWidth: 1 } } },
+    animationAppear: { preset: "grow", duration: 820, easing: "cubicOut" },
+  };
+}
+
+function tokenDistributionSpec(buckets, totalTokens) {
+  const values = buckets.flatMap((bucket) => bucket.models.map((item) => ({ Time: bucket.label, Model: item.model, Tokens: item.tokens })));
+  return {
+    ...baseChart("模型词元用量", `总计：${integer(totalTokens)}`),
+    type: "bar",
+    data: [{ id: "tokenData", values }],
+    xField: "Time",
+    yField: "Tokens",
+    seriesField: "Model",
+    stack: true,
+    axes: axisStyle(countAxis(values.map((item) => item.Tokens))),
+    padding: { top: 62, right: 28, bottom: 44, left: 64 },
     color: { specified: colorMap },
     bar: { style: { cornerRadius: 2 }, state: { hover: { stroke: "#000", lineWidth: 1 } } },
     animationAppear: { preset: "grow", duration: 820, easing: "cubicOut" },
@@ -1812,6 +1847,7 @@ function buildTimeBuckets(logs, models) {
         model: modelId,
         count: rows.length,
         cost: rows.reduce((sum, log) => sum + costForLog(log, models), 0),
+        tokens: rows.reduce((sum, log) => sum + log.totalTokens, 0),
       };
     });
     return {
@@ -1830,6 +1866,15 @@ function costForLog(log, models) {
   return (log.inputTokens / 1_000_000) * model.inputPrice +
     (log.outputTokens / 1_000_000) * model.outputPrice +
     (log.cachedTokens / 1_000_000) * model.cachePrice;
+}
+
+function getLogTokenSummary(rows) {
+  return rows.reduce((summary, log) => ({
+    inputTokens: summary.inputTokens + log.inputTokens,
+    outputTokens: summary.outputTokens + log.outputTokens,
+    cachedTokens: summary.cachedTokens + log.cachedTokens,
+    totalTokens: summary.totalTokens + log.totalTokens,
+  }), { inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0 });
 }
 
 function filterModels(models, search, status) {
